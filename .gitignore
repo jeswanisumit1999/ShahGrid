@@ -1,0 +1,67 @@
+# ─── Node / Backend ───────────────────────────────────────────────────────────
+node_modules/
+dist/
+build/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Prisma
+Backend/prisma/migrations/dev.db
+Backend/prisma/*.db
+Backend/prisma/*.db-journal
+
+# ─── Flutter / Frontend ───────────────────────────────────────────────────────
+# Build outputs
+Frontend/shah_grid/.dart_tool/
+Frontend/shah_grid/build/
+Frontend/shah_grid/.flutter-plugins
+Frontend/shah_grid/.flutter-plugins-dependencies
+Frontend/shah_grid/.packages
+
+# Generated files
+Frontend/shah_grid/*.g.dart
+Frontend/shah_grid/**/*.g.dart
+
+# iOS
+Frontend/shah_grid/ios/Pods/
+Frontend/shah_grid/ios/.symlinks/
+Frontend/shah_grid/ios/Flutter/flutter_export_environment.sh
+
+# Android
+Frontend/shah_grid/android/.gradle/
+Frontend/shah_grid/android/local.properties
+Frontend/shah_grid/android/app/debug/
+Frontend/shah_grid/android/app/profile/
+Frontend/shah_grid/android/app/release/
+Frontend/shah_grid/android/key.properties
+*.keystore
+*.jks
+
+# macOS
+Frontend/shah_grid/macos/Pods/
+Frontend/shah_grid/macos/.symlinks/
+
+# Web
+Frontend/shah_grid/web/flutter_service_worker.js
+
+# ─── OS & Editor ──────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ─── Misc ─────────────────────────────────────────────────────────────────────
+prompt.txt
+*.pem
+*.p12
+*.p8

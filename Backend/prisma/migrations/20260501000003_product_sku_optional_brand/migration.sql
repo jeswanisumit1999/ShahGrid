@@ -1,0 +1,2 @@
+ALTER TABLE "products" ALTER COLUMN "sku" DROP NOT NULL;
+ALTER TABLE "products" ADD COLUMN "brand" VARCHAR(128);

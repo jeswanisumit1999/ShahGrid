@@ -1,0 +1,47 @@
+name: shah_grid
+description: ShahGrid — field sales management platform
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_web_plugins:
+    sdk: flutter
+
+  # State management
+  flutter_riverpod: ^2.6.1
+
+  # HTTP client
+  dio: ^5.7.0
+
+  # Routing
+  go_router: ^14.6.2
+
+  # Google Sign In (handles web, Android, iOS)
+  google_sign_in: ^6.2.2
+
+  # Secure token storage
+  flutter_secure_storage: ^9.2.4
+
+  # Persistent simple prefs
+  shared_preferences: ^2.3.4
+
+  # Date/number formatting
+  intl: ^0.19.0
+
+  cupertino_icons: ^1.0.8
+
+  # Web platform utilities (window.location etc.)
+  web: ^1.1.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

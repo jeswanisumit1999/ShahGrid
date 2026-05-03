@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(flutter pub *)",
+      "Bash(/opt/homebrew/bin/node node_modules/.bin/prisma migrate deploy)"
+    ]
+  }
+}
