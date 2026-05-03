@@ -38,7 +38,7 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
     super.dispose();
   }
 
-  double get _total => _lines.fold(0, (s, l) => s + l.qty * l.product.price);
+  double get _total => _lines.fold(0, (s, l) => s + l.qty * l.unitPrice);
 
   Future<void> _submit() async {
     if (_selectedRetailer == null || _lines.isEmpty) return;
@@ -53,7 +53,7 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
         items: _lines.map((l) => {
           'productId': l.product.id,
           'quantity': l.qty,
-          'unitPrice': l.product.price,
+          'unitPrice': l.unitPrice,
         }).toList(),
         isDirectSale: _isDirectSale,
         overrideCompanyId: _overrideCompanyId,
@@ -144,8 +144,10 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
           ]),
           ..._lines.asMap().entries.map((e) => _OrderLineTile(
                 line: e.value,
+                canEditPrice: user?.hasRole('Admin') == true,
                 onRemove: () => setState(() => _lines.removeAt(e.key)),
                 onQtyChanged: (q) => setState(() => _lines[e.key] = e.value.withQty(q)),
+                onPriceChanged: (p) => setState(() => _lines[e.key] = e.value.withUnitPrice(p)),
               )),
 
           if (_lines.isNotEmpty) ...[
@@ -345,23 +347,89 @@ class _ProductPickerDialogState extends State<_ProductPickerDialog> {
 }
 
 class _OrderLine {
-  const _OrderLine({required this.product, required this.qty});
+  _OrderLine({required this.product, required this.qty, double? unitPrice})
+      : unitPrice = unitPrice ?? product.price;
   final ProductModel product;
   final int qty;
-  _OrderLine withQty(int q) => _OrderLine(product: product, qty: q);
+  final double unitPrice;
+  _OrderLine withQty(int q) => _OrderLine(product: product, qty: q, unitPrice: unitPrice);
+  _OrderLine withUnitPrice(double p) => _OrderLine(product: product, qty: qty, unitPrice: p);
 }
 
 class _OrderLineTile extends StatelessWidget {
-  const _OrderLineTile({required this.line, required this.onRemove, required this.onQtyChanged});
+  const _OrderLineTile({
+    required this.line,
+    required this.onRemove,
+    required this.onQtyChanged,
+    required this.canEditPrice,
+    required this.onPriceChanged,
+  });
   final _OrderLine line;
   final VoidCallback onRemove;
   final void Function(int) onQtyChanged;
+  final bool canEditPrice;
+  final void Function(double) onPriceChanged;
+
+  void _showPriceDialog(BuildContext context) {
+    final ctrl = TextEditingController(text: line.unitPrice.toStringAsFixed(2));
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: Text('Set price — ${line.product.name}'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(labelText: 'Unit price (₹)', prefixText: '₹ '),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogCtx), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () {
+              final p = double.tryParse(ctrl.text);
+              if (p != null && p > 0) {
+                onPriceChanged(p);
+                Navigator.pop(dialogCtx);
+              }
+            },
+            child: const Text('Apply'),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final priceOverridden = line.unitPrice != line.product.price;
     return ListTile(
       title: Text(line.product.name),
-      subtitle: Text(formatCurrency(line.product.price)),
+      subtitle: Row(mainAxisSize: MainAxisSize.min, children: [
+        Text(
+          formatCurrency(line.unitPrice),
+          style: priceOverridden
+              ? TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w600)
+              : null,
+        ),
+        if (priceOverridden) ...[
+          const SizedBox(width: 4),
+          Text(
+            formatCurrency(line.product.price),
+            style: TextStyle(
+              fontSize: 11,
+              decoration: TextDecoration.lineThrough,
+              color: Theme.of(context).colorScheme.outline,
+            ),
+          ),
+        ],
+        if (canEditPrice) ...[
+          const SizedBox(width: 4),
+          InkWell(
+            onTap: () => _showPriceDialog(context),
+            child: Icon(Icons.edit, size: 14, color: Theme.of(context).colorScheme.primary),
+          ),
+        ],
+      ]),
       trailing: Row(mainAxisSize: MainAxisSize.min, children: [
         IconButton(icon: const Icon(Icons.remove), onPressed: line.qty > 1 ? () => onQtyChanged(line.qty - 1) : null),
         Text(formatNumber(line.qty)),
