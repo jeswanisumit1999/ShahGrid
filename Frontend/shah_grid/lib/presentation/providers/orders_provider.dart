@@ -15,6 +15,8 @@ class OrdersNotifier extends StateNotifier<AsyncValue<PaginatedResult<OrderModel
 
   final OrdersRepository _repo;
   String? _cursor;
+  String? _salesOfficerId;
+  String? _search;
   final List<OrderModel> _items = [];
 
   Future<void> load({bool refresh = false}) async {
@@ -24,7 +26,11 @@ class OrdersNotifier extends StateNotifier<AsyncValue<PaginatedResult<OrderModel
     }
     try {
       if (_items.isEmpty) state = const AsyncValue.loading();
-      final result = await _repo.list(cursor: _cursor);
+      final result = await _repo.list(
+        cursor: _cursor,
+        salesOfficerId: _salesOfficerId,
+        search: _search,
+      );
       _items.addAll(result.items);
       _cursor = result.nextCursor;
       state = AsyncValue.data(
@@ -38,6 +44,16 @@ class OrdersNotifier extends StateNotifier<AsyncValue<PaginatedResult<OrderModel
   Future<void> loadMore() async {
     if (!(state.valueOrNull?.hasMore ?? false)) return;
     await load();
+  }
+
+  Future<void> filterBySalesOfficer(String? salesOfficerId) async {
+    _salesOfficerId = salesOfficerId;
+    await load(refresh: true);
+  }
+
+  Future<void> search(String? query) async {
+    _search = (query != null && query.trim().isEmpty) ? null : query?.trim();
+    await load(refresh: true);
   }
 }
 

@@ -4,9 +4,12 @@ import 'package:go_router/go_router.dart';
 import '../../providers/orders_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../../data/repositories/orders_repository.dart';
+import '../../../data/repositories/products_repository.dart';
 import '../../../core/utils/format_utils.dart';
-import '../../../core/utils/pdf_downloader.dart';
+import '../../../core/utils/pdf_preview.dart';
+import '../../../core/network/dio_client.dart';
 import '../../../data/models/order_model.dart';
+import '../../../data/models/product_model.dart';
 import '../../widgets/common/app_error_widget.dart';
 import '../../widgets/common/status_badge.dart';
 
@@ -45,14 +48,19 @@ class _OrderBodyState extends ConsumerState<_OrderBody> {
     try {
       final bytes = await ref.read(ordersRepositoryProvider).downloadChallan(widget.order.id);
       final shortId = widget.order.id.split('-').first.toUpperCase();
-      await downloadPdf(bytes, 'challan_$shortId.pdf');
+      final filename = 'challan_$shortId.pdf';
+      final handle = createPdfPreview(bytes);
+      if (!mounted) { handle.dispose(); return; }
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => _ChallanPreviewDialog(handle: handle, filename: filename),
+      );
+      handle.dispose();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to generate challan: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text(friendlyError(e)), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -60,11 +68,67 @@ class _OrderBodyState extends ConsumerState<_OrderBody> {
     }
   }
 
+  Future<void> _addProduct() async {
+    try {
+      final products = await ref.read(productsRepositoryProvider).list(limit: 100);
+      if (!mounted) return;
+      final product = await showDialog<ProductModel>(
+        context: context,
+        builder: (_) => _ProductPickerDialog(products: products.items),
+      );
+      if (product == null || !mounted) return;
+      final result = await showDialog<({int qty, double price})>(
+        context: context,
+        builder: (_) => _AddItemDetailsDialog(product: product),
+      );
+      if (result == null || !mounted) return;
+      await ref.read(ordersRepositoryProvider).addItem(
+            orderId: widget.order.id,
+            productId: product.id,
+            quantity: result.qty,
+            unitPrice: result.price,
+          );
+      ref.invalidate(orderDetailProvider(widget.order.id));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(friendlyError(e)), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _editItem(OrderItemModel item) async {
+    final result = await showDialog<({int qty, double price})>(
+      context: context,
+      builder: (_) => _EditItemDialog(item: item),
+    );
+    if (result == null) return;
+    if (result.qty == item.quantity && result.price == item.unitPrice) return;
+
+    try {
+      await ref.read(ordersRepositoryProvider).updateItemQuantity(
+            orderId: widget.order.id,
+            itemId: item.id,
+            quantity: result.qty,
+            unitPrice: result.price != item.unitPrice ? result.price : null,
+          );
+      ref.invalidate(orderDetailProvider(widget.order.id));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(friendlyError(e)), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final canGenerateChallan = ref.watch(authStateProvider).valueOrNull
-            ?.hasPermission('challans', 'generate') ??
-        false;
+    final user = ref.watch(authStateProvider).valueOrNull;
+    final canGenerateChallan = user?.hasPermission('challans', 'generate') ?? false;
+    final canEditItems = !widget.order.isDirectSale &&
+        (user?.hasPermission('orders', 'manage') ?? false);
     final order = widget.order;
 
     return ListView(
@@ -106,15 +170,53 @@ class _OrderBodyState extends ConsumerState<_OrderBody> {
         const SizedBox(height: 16),
 
         // Order items
-        Text('Items', style: Theme.of(context).textTheme.titleMedium),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('Items', style: Theme.of(context).textTheme.titleMedium),
+            if (canEditItems)
+              TextButton.icon(
+                onPressed: _addProduct,
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Add Product'),
+              ),
+          ],
+        ),
         const SizedBox(height: 8),
         ...order.orderItems.map((item) => Card(
               margin: const EdgeInsets.only(bottom: 8),
               child: ListTile(
                 title: Text(item.product?.name ?? item.productId),
-                subtitle: Text('${formatNumber(item.quantity)} × ${formatCurrency(item.unitPrice)}'),
-                trailing: Text(formatCurrency(item.lineTotal),
-                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('${formatNumber(item.quantity)} × ${formatCurrency(item.unitPrice)}'),
+                    if ((item.deliveredQuantity ?? 0) > 0)
+                      Text(
+                        'Delivered: ${formatNumber(item.deliveredQuantity!)}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                      ),
+                  ],
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(formatCurrency(item.lineTotal),
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                    if (canEditItems) ...[
+                      const SizedBox(width: 4),
+                      IconButton(
+                        icon: const Icon(Icons.edit_outlined, size: 18),
+                        tooltip: 'Edit item',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => _editItem(item),
+                      ),
+                    ],
+                  ],
+                ),
+                isThreeLine: (item.deliveredQuantity ?? 0) > 0,
               ),
             )),
 
@@ -158,6 +260,359 @@ class _OrderBodyState extends ConsumerState<_OrderBody> {
           ),
         ],
       ],
+    );
+  }
+}
+
+// ── Edit Item Dialog ──────────────────────────────────────────────────────────
+
+class _EditItemDialog extends StatefulWidget {
+  const _EditItemDialog({required this.item});
+  final OrderItemModel item;
+
+  @override
+  State<_EditItemDialog> createState() => _EditItemDialogState();
+}
+
+class _EditItemDialogState extends State<_EditItemDialog> {
+  late final TextEditingController _qtyCtrl;
+  late final TextEditingController _priceCtrl;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _qtyCtrl = TextEditingController(text: widget.item.quantity.toString());
+    _priceCtrl = TextEditingController(text: widget.item.unitPrice.toStringAsFixed(2));
+  }
+
+  @override
+  void dispose() {
+    _qtyCtrl.dispose();
+    _priceCtrl.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final qty = int.tryParse(_qtyCtrl.text.trim());
+    final price = double.tryParse(_priceCtrl.text.trim());
+    final delivered = widget.item.deliveredQuantity ?? 0;
+    if (qty == null || qty < 1) {
+      setState(() => _error = 'Enter a valid quantity');
+      return;
+    }
+    if (qty < delivered) {
+      setState(() => _error = 'Cannot go below delivered quantity ($delivered)');
+      return;
+    }
+    if (price == null || price <= 0) {
+      setState(() => _error = 'Enter a valid price');
+      return;
+    }
+    Navigator.pop(context, (qty: qty, price: price));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final delivered = widget.item.deliveredQuantity ?? 0;
+
+    return AlertDialog(
+      title: Text(widget.item.product?.name ?? 'Edit Item'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Current: ${formatNumber(widget.item.quantity)} × ${formatCurrency(widget.item.unitPrice)}',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          if (delivered > 0) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Already delivered: ${formatNumber(delivered)} — minimum qty is $delivered',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+            ),
+          ],
+          const SizedBox(height: 16),
+          TextField(
+            controller: _qtyCtrl,
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(
+              labelText: 'Quantity',
+              border: const OutlineInputBorder(),
+              helperText: delivered > 0 ? 'Minimum: $delivered' : null,
+            ),
+            onChanged: (_) => setState(() => _error = null),
+            onSubmitted: (_) => FocusScope.of(context).nextFocus(),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _priceCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Unit Price (₹)',
+              prefixText: '₹ ',
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (_) => setState(() => _error = null),
+            onSubmitted: (_) => _submit(),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            Text(_error!,
+                style: TextStyle(
+                    color: Theme.of(context).colorScheme.error, fontSize: 12)),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        FilledButton(onPressed: _submit, child: const Text('Update')),
+      ],
+    );
+  }
+}
+
+// ── Product Picker Dialog ─────────────────────────────────────────────────────
+
+class _ProductPickerDialog extends StatefulWidget {
+  const _ProductPickerDialog({required this.products});
+  final List<ProductModel> products;
+
+  @override
+  State<_ProductPickerDialog> createState() => _ProductPickerDialogState();
+}
+
+class _ProductPickerDialogState extends State<_ProductPickerDialog> {
+  final _searchCtrl = TextEditingController();
+  List<ProductModel> _filtered = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _filtered = widget.products;
+    _searchCtrl.addListener(_onSearch);
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onSearch() {
+    final q = _searchCtrl.text.trim().toLowerCase();
+    setState(() {
+      _filtered = q.isEmpty
+          ? widget.products
+          : widget.products
+              .where((p) =>
+                  p.name.toLowerCase().contains(q) ||
+                  (p.sku?.toLowerCase().contains(q) ?? false))
+              .toList();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 480,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.75,
+        ),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Row(
+                children: [
+                  Text('Select Product', style: Theme.of(context).textTheme.titleLarge),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: TextField(
+                controller: _searchCtrl,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  hintText: 'Search by name or SKU…',
+                  prefixIcon: Icon(Icons.search),
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Divider(height: 1),
+            Expanded(
+              child: _filtered.isEmpty
+                  ? const Center(child: Text('No products found'))
+                  : ListView.builder(
+                      itemCount: _filtered.length,
+                      itemBuilder: (_, i) {
+                        final p = _filtered[i];
+                        return ListTile(
+                          title: Text(p.name),
+                          subtitle: Text(
+                              'SKU: ${p.sku ?? '—'}  •  Stock: ${formatNumber(p.stockQuantity)}  •  ${formatCurrency(p.price)}'),
+                          dense: true,
+                          onTap: () => Navigator.pop(context, p),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Add Item Details Dialog ───────────────────────────────────────────────────
+
+class _AddItemDetailsDialog extends StatefulWidget {
+  const _AddItemDetailsDialog({required this.product});
+  final ProductModel product;
+
+  @override
+  State<_AddItemDetailsDialog> createState() => _AddItemDetailsDialogState();
+}
+
+class _AddItemDetailsDialogState extends State<_AddItemDetailsDialog> {
+  late final TextEditingController _qtyCtrl;
+  late final TextEditingController _priceCtrl;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _qtyCtrl = TextEditingController(text: '1');
+    _priceCtrl = TextEditingController(text: widget.product.price.toStringAsFixed(2));
+  }
+
+  @override
+  void dispose() {
+    _qtyCtrl.dispose();
+    _priceCtrl.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final qty = int.tryParse(_qtyCtrl.text.trim());
+    final price = double.tryParse(_priceCtrl.text.trim());
+    if (qty == null || qty < 1) {
+      setState(() => _error = 'Enter a valid quantity');
+      return;
+    }
+    if (price == null || price <= 0) {
+      setState(() => _error = 'Enter a valid price');
+      return;
+    }
+    Navigator.pop(context, (qty: qty, price: price));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Add ${widget.product.name}'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Stock: ${formatNumber(widget.product.stockQuantity)}  •  Default price: ${formatCurrency(widget.product.price)}',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _qtyCtrl,
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Quantity',
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (_) => setState(() => _error = null),
+            onSubmitted: (_) => FocusScope.of(context).nextFocus(),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _priceCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Unit Price (₹)',
+              prefixText: '₹ ',
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (_) => setState(() => _error = null),
+            onSubmitted: (_) => _submit(),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            Text(_error!,
+                style: TextStyle(
+                    color: Theme.of(context).colorScheme.error, fontSize: 12)),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        FilledButton(onPressed: _submit, child: const Text('Add')),
+      ],
+    );
+  }
+}
+
+// ── Challan Preview ───────────────────────────────────────────────────────────
+
+class _ChallanPreviewDialog extends StatelessWidget {
+  const _ChallanPreviewDialog({required this.handle, required this.filename});
+  final PdfPreviewHandle handle;
+  final String filename;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog.fullscreen(
+      child: Column(
+        children: [
+          AppBar(
+            automaticallyImplyLeading: false,
+            title: Text(filename),
+            actions: [
+              TextButton.icon(
+                onPressed: () => handle.download(filename),
+                icon: const Icon(Icons.download_outlined),
+                label: const Text('Download'),
+              ),
+              TextButton.icon(
+                onPressed: handle.print,
+                icon: const Icon(Icons.print_outlined),
+                label: const Text('Print'),
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                icon: const Icon(Icons.close),
+                tooltip: 'Close',
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+          Expanded(
+            child: HtmlElementView(viewType: handle.viewType),
+          ),
+        ],
+      ),
     );
   }
 }

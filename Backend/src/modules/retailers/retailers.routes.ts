@@ -3,7 +3,7 @@ import * as controller from './retailers.controller';
 import { authenticate } from '../../middleware/auth.middleware';
 import { requirePermission } from '../../middleware/rbac.middleware';
 import { validate } from '../../middleware/validate.middleware';
-import { createRetailerSchema, updateRetailerSchema, listRetailersQuerySchema } from './retailers.validators';
+import { createRetailerSchema, updateRetailerSchema, listRetailersQuerySchema, retailerLedgerQuerySchema } from './retailers.validators';
 
 const router = Router();
 
@@ -18,7 +18,7 @@ router.use(authenticate);
  *     description: >
  *       Sales Officers see only retailers assigned to them unless the
  *       `sales_officer_view_all_retailers` app setting is `true`.
- *       Users with `retailers.manage` always see all retailers.
+ *       Users with `shipments.manage` always see all retailers.
  *     parameters:
  *       - $ref: '#/components/parameters/cursor'
  *       - $ref: '#/components/parameters/limit'
@@ -73,6 +73,7 @@ router.get('/', requirePermission('retailers', 'read'), validate(listRetailersQu
  *       404:
  *         $ref: '#/components/responses/NotFound'
  */
+router.get('/:id/ledger', requirePermission('retailers', 'read'), validate(retailerLedgerQuerySchema, 'query'), controller.getRetailerLedger);
 router.get('/:id', requirePermission('retailers', 'read'), controller.getRetailer);
 
 /**
@@ -138,5 +139,6 @@ router.post('/', requirePermission('retailers', 'manage'), validate(createRetail
  *         $ref: '#/components/responses/NotFound'
  */
 router.patch('/:id', requirePermission('retailers', 'manage'), validate(updateRetailerSchema), controller.updateRetailer);
+router.delete('/:id', requirePermission('retailers', 'manage'), controller.deleteRetailer);
 
 export default router;

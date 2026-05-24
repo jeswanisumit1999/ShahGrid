@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../data/models/product_model.dart';
 import '../../../data/repositories/products_repository.dart';
-import '../../../core/errors/app_exception.dart';
+import '../../../core/network/dio_client.dart';
 import 'products_list_screen.dart';
 
 final _companiesProvider = StateNotifierProvider.autoDispose<_ListNotifier<CompanySummary>,
@@ -51,6 +51,7 @@ class _CreateProductScreenState extends ConsumerState<CreateProductScreen> {
   final _skuCtrl = TextEditingController();
   final _priceCtrl = TextEditingController();
   final _stockCtrl = TextEditingController(text: '0');
+  final _thresholdCtrl = TextEditingController();
   String _brand = '';
   String? _selectedCompanyId;
   String? _selectedCategoryId;
@@ -63,6 +64,7 @@ class _CreateProductScreenState extends ConsumerState<CreateProductScreen> {
     _skuCtrl.dispose();
     _priceCtrl.dispose();
     _stockCtrl.dispose();
+    _thresholdCtrl.dispose();
     super.dispose();
   }
 
@@ -72,6 +74,7 @@ class _CreateProductScreenState extends ConsumerState<CreateProductScreen> {
     try {
       final sku = _skuCtrl.text.trim();
       final brand = _brand.trim();
+      final threshold = int.tryParse(_thresholdCtrl.text.trim());
       await ref.read(productsRepositoryProvider).create({
         'name': _nameCtrl.text.trim(),
         if (sku.isNotEmpty) 'sku': sku,
@@ -80,6 +83,7 @@ class _CreateProductScreenState extends ConsumerState<CreateProductScreen> {
         'stockQuantity': int.parse(_stockCtrl.text),
         'companyId': _selectedCompanyId!,
         if (_selectedCategoryId != null) 'categoryId': _selectedCategoryId,
+        if (threshold != null) 'lowStockThreshold': threshold,
       });
       if (mounted) {
         ref.invalidate(productsListProvider);
@@ -89,9 +93,94 @@ class _CreateProductScreenState extends ConsumerState<CreateProductScreen> {
         context.go('/products');
       }
     } catch (e) {
-      final ex = e is AppException ? e : AppException.unknown();
-      setState(() { _error = ex.message; _saving = false; });
+      setState(() { _error = friendlyError(e); _saving = false; });
     }
+  }
+
+  Future<String?> _showAddCompanyDialog() async {
+    final nameCtrl = TextEditingController();
+    final gstinCtrl = TextEditingController();
+    final phoneCtrl = TextEditingController();
+    final addressCtrl = TextEditingController();
+    String? createdId;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('New Company'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameCtrl,
+                autofocus: true,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(labelText: 'Company Name *'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: phoneCtrl,
+                keyboardType: TextInputType.phone,
+                decoration: const InputDecoration(labelText: 'Mobile Number (optional)'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: gstinCtrl,
+                textCapitalization: TextCapitalization.characters,
+                maxLength: 15,
+                decoration: const InputDecoration(
+                  labelText: 'GSTIN (optional)',
+                  counterText: '',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: addressCtrl,
+                textCapitalization: TextCapitalization.sentences,
+                maxLines: 2,
+                decoration: const InputDecoration(labelText: 'Address (optional)'),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () async {
+              final name = nameCtrl.text.trim();
+              if (name.isEmpty) return;
+              try {
+                String? ne(String s) => s.isEmpty ? null : s;
+                final c = await ref.read(productsRepositoryProvider).createCompany(
+                      name,
+                      gstin: ne(gstinCtrl.text.trim().toUpperCase()),
+                      phone: ne(phoneCtrl.text.trim()),
+                      address: ne(addressCtrl.text.trim()),
+                    );
+                createdId = c.id;
+                ref.read(_companiesProvider.notifier).load();
+                if (ctx.mounted) Navigator.pop(ctx);
+              } catch (e) {
+                final msg = friendlyError(e);
+                if (ctx.mounted) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    SnackBar(content: Text(msg), backgroundColor: Colors.red),
+                  );
+                }
+              }
+            },
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+
+    nameCtrl.dispose();
+    gstinCtrl.dispose();
+    phoneCtrl.dispose();
+    addressCtrl.dispose();
+    return createdId;
   }
 
   /// Shows a dialog to create a new company/category, refreshes the list,
@@ -125,7 +214,7 @@ class _CreateProductScreenState extends ConsumerState<CreateProductScreen> {
                 createdId = await onCreate(name);
                 if (ctx.mounted) Navigator.pop(ctx);
               } catch (e) {
-                final msg = e is AppException ? e.message : e.toString();
+                final msg = friendlyError(e);
                 if (ctx.mounted) {
                   ScaffoldMessenger.of(ctx).showSnackBar(
                     SnackBar(content: Text(msg), backgroundColor: Colors.red),
@@ -210,6 +299,21 @@ class _CreateProductScreenState extends ConsumerState<CreateProductScreen> {
                 return null;
               },
             ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _thresholdCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Low Stock Alert Threshold (optional)',
+                helperText: 'Show alert on dashboard when stock falls to or below this number',
+              ),
+              keyboardType: TextInputType.number,
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) return null;
+                final n = int.tryParse(v.trim());
+                if (n == null || n < 0) return 'Enter a non-negative whole number';
+                return null;
+              },
+            ),
             const SizedBox(height: 16),
 
             // ── Company row ──────────────────────────────────────────
@@ -243,17 +347,7 @@ class _CreateProductScreenState extends ConsumerState<CreateProductScreen> {
                     child: IconButton.filledTonal(
                       icon: const Icon(Icons.add_business_outlined),
                       onPressed: () async {
-                        final newId = await _showAddDialog(
-                          title: 'New Company',
-                          onCreate: (name) async {
-                            final c = await ref
-                                .read(productsRepositoryProvider)
-                                .createCompany(name);
-                            return c.id;
-                          },
-                          onRefresh: () =>
-                              ref.read(_companiesProvider.notifier).load(),
-                        );
+                        final newId = await _showAddCompanyDialog();
                         if (newId != null) setState(() => _selectedCompanyId = newId);
                       },
                     ),

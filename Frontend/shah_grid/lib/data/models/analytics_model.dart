@@ -25,6 +25,24 @@ class DashboardModel {
       );
 }
 
+class GodownStatsModel {
+  const GodownStatsModel({
+    required this.pendingAvailability,
+    required this.pendingVerification,
+    required this.readyForDispatch,
+  });
+
+  final int pendingAvailability;
+  final int pendingVerification;
+  final int readyForDispatch;
+
+  factory GodownStatsModel.fromJson(Map<String, dynamic> json) => GodownStatsModel(
+        pendingAvailability: json['pendingAvailability'] as int? ?? 0,
+        pendingVerification: json['pendingVerification'] as int? ?? 0,
+        readyForDispatch: json['readyForDispatch'] as int? ?? 0,
+      );
+}
+
 class MyStatsModel {
   const MyStatsModel({
     required this.orderCount,

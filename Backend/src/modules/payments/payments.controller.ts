@@ -11,8 +11,8 @@ export async function recordPayment(req: Request, res: Response, next: NextFunct
 
 export async function listPayments(req: Request, res: Response, next: NextFunction) {
   try {
-    const { cursor, limit, orderId, retailerId } = req.query as any;
-    const result = await paymentsService.listPayments({ cursor, limit: Number(limit) || 20, orderId, retailerId });
+    const { cursor, limit, orderId, retailerId, search } = req.query as any;
+    const result = await paymentsService.listPayments({ cursor, limit: Number(limit) || 20, orderId, retailerId, search });
     sendSuccess(res, result.items, 200, { nextCursor: result.nextCursor, hasMore: result.hasMore });
   } catch (err) { next(err); }
 }

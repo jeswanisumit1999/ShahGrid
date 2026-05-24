@@ -11,6 +11,7 @@ class RetailerModel {
     this.address,
     this.gstin,
     this.salesOfficers = const [],
+    this.companyBalances = const [],
   });
 
   final String id;
@@ -24,6 +25,7 @@ class RetailerModel {
   final String? address;
   final String? gstin;
   final List<RetailerOfficer> salesOfficers;
+  final List<CompanyBalance> companyBalances;
 
   double get availableCredit => creditLimit - pendingCollection;
 
@@ -41,6 +43,27 @@ class RetailerModel {
         salesOfficers: (json['salesOfficers'] as List? ?? [])
             .map((e) => RetailerOfficer.fromJson(e as Map<String, dynamic>))
             .toList(),
+        companyBalances: (json['companyBalances'] as List? ?? [])
+            .map((e) => CompanyBalance.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
+}
+
+class CompanyBalance {
+  const CompanyBalance({
+    required this.companyId,
+    required this.companyName,
+    required this.pendingAmount,
+  });
+
+  final String companyId;
+  final String companyName;
+  final double pendingAmount;
+
+  factory CompanyBalance.fromJson(Map<String, dynamic> json) => CompanyBalance(
+        companyId: json['companyId'] as String? ?? '',
+        companyName: (json['company'] as Map<String, dynamic>?)?['name'] as String? ?? '',
+        pendingAmount: double.tryParse(json['pendingAmount']?.toString() ?? '') ?? 0,
       );
 }
 

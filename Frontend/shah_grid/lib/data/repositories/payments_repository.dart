@@ -18,12 +18,14 @@ class PaymentsRepository {
     int limit = 20,
     String? orderId,
     String? retailerId,
+    String? search,
   }) async {
     final response = await _dio.get(ApiConstants.payments, queryParameters: {
       if (cursor != null) 'cursor': cursor,
       'limit': limit,
       if (orderId != null) 'orderId': orderId,
       if (retailerId != null) 'retailerId': retailerId,
+      if (search != null && search.isNotEmpty) 'search': search,
     });
     final body = response.data as Map<String, dynamic>;
     final pagination = body['pagination'] as Map<String, dynamic>? ?? {};
@@ -41,6 +43,7 @@ class PaymentsRepository {
     required double amount,
     required String paymentDate,
     required String method,
+    String? companyId,
     String? referenceNo,
     String? notes,
     String? idempotencyKey,
@@ -50,6 +53,7 @@ class PaymentsRepository {
       'amount': amount,
       'paymentDate': paymentDate,
       'method': method,
+      if (companyId != null) 'companyId': companyId,
       if (referenceNo != null && referenceNo.isNotEmpty) 'referenceNo': referenceNo,
       if (notes != null && notes.isNotEmpty) 'notes': notes,
       if (idempotencyKey != null) 'idempotencyKey': idempotencyKey,

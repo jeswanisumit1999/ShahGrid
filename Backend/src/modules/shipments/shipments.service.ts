@@ -3,6 +3,9 @@ import { prisma } from '../../lib/prisma';
 import { AppError } from '../../errors/AppError';
 import { buildPrismaPage, buildPaginationResult } from '../../utils/pagination';
 import { writeAuditLog } from '../../utils/audit';
+import { writeStockLedger } from '../../utils/stockLedger';
+import { writeRetailerLedger } from '../../utils/retailerLedger';
+import { adjustCompanyBalance } from '../../utils/companyBalance';
 
 /**
  * Role-gated transition table.
@@ -49,7 +52,8 @@ export async function updateShipmentStatus(
   notes: string | undefined,
   actorId: string,
   actorRoles: string[],
-  adjustments?: ShipmentItemAdjustment[]
+  adjustments?: ShipmentItemAdjustment[],
+  force?: boolean
 ) {
   return prisma.$transaction(async (tx) => {
     const shipment = await tx.shipment.findUnique({
@@ -81,7 +85,7 @@ export async function updateShipmentStatus(
       for (const item of shipment.shipmentItems) {
         const product = item.orderItem.product;
         const newStock = product.stockQuantity - item.quantity;
-        if (newStock < 0) {
+        if (newStock < 0 && !force) {
           throw AppError.badRequest(
             `Insufficient stock for "${product.name}" (available: ${product.stockQuantity}, needed: ${item.quantity})`,
             'INSUFFICIENT_STOCK'
@@ -91,15 +95,33 @@ export async function updateShipmentStatus(
           where: { id: product.id },
           data: { stockQuantity: newStock },
         });
+        await writeStockLedger(tx, {
+          productId: product.id,
+          delta: -item.quantity,
+          balanceAfter: newStock,
+          type: 'dispatch_out',
+          referenceType: 'Shipment',
+          referenceId: shipmentId,
+          actorId,
+        });
       }
     }
 
     // ── Cancelled: restore stock if it was already reserved ───────────────────
     if (newStatus === 'Cancelled' && shipment.status === 'Ready for Dispatch') {
       for (const item of shipment.shipmentItems) {
-        await tx.product.update({
+        const updated = await tx.product.update({
           where: { id: item.orderItem.product.id },
           data: { stockQuantity: { increment: item.quantity } },
+        });
+        await writeStockLedger(tx, {
+          productId: item.orderItem.product.id,
+          delta: item.quantity,
+          balanceAfter: updated.stockQuantity,
+          type: 'dispatch_cancel_in',
+          referenceType: 'Shipment',
+          referenceId: shipmentId,
+          actorId,
         });
       }
     }
@@ -128,9 +150,18 @@ export async function updateShipmentStatus(
 
         // Restore stock for undelivered portion
         if (reduced > 0) {
-          await tx.product.update({
+          const updated = await tx.product.update({
             where: { id: item.orderItem.product.id },
             data: { stockQuantity: { increment: reduced } },
+          });
+          await writeStockLedger(tx, {
+            productId: item.orderItem.product.id,
+            delta: reduced,
+            balanceAfter: updated.stockQuantity,
+            type: 'delivery_short_in',
+            referenceType: 'Shipment',
+            referenceId: shipmentId,
+            actorId,
           });
           totalOrderReduction += reduced * Number(item.orderItem.unitPrice);
         }
@@ -154,9 +185,20 @@ export async function updateShipmentStatus(
           where: { id: shipment.orderId },
           data: { totalAmount: { decrement: totalOrderReduction } },
         });
-        await tx.retailer.update({
+        const afterShortfall = await tx.retailer.update({
           where: { id: shipment.order.retailerId },
           data: { pendingCollection: { decrement: totalOrderReduction } },
+        });
+        await adjustCompanyBalance(tx, shipment.order.retailerId, shipment.companyId, -totalOrderReduction);
+        await writeRetailerLedger(tx, {
+          retailerId: shipment.order.retailerId,
+          companyId: shipment.companyId,
+          delta: -totalOrderReduction,
+          balanceAfter: Number(afterShortfall.pendingCollection),
+          type: 'delivery_adjustment',
+          referenceType: 'Shipment',
+          referenceId: shipmentId,
+          actorId,
         });
       }
     }
@@ -168,9 +210,18 @@ export async function updateShipmentStatus(
       let returnedAmount = 0;
       for (const item of shipment.shipmentItems) {
         if (item.status === 'delivered' && item.quantity > 0) {
-          await tx.product.update({
+          const updated = await tx.product.update({
             where: { id: item.orderItem.product.id },
             data: { stockQuantity: { increment: item.quantity } },
+          });
+          await writeStockLedger(tx, {
+            productId: item.orderItem.product.id,
+            delta: item.quantity,
+            balanceAfter: updated.stockQuantity,
+            type: 'shipment_return_in',
+            referenceType: 'Shipment',
+            referenceId: shipmentId,
+            actorId,
           });
           await tx.shipmentItem.update({
             where: { id: item.id },
@@ -189,9 +240,20 @@ export async function updateShipmentStatus(
           where: { id: shipment.orderId },
           data: { totalAmount: { decrement: returnedAmount } },
         });
-        await tx.retailer.update({
+        const afterReturn = await tx.retailer.update({
           where: { id: shipment.order.retailerId },
           data: { pendingCollection: { decrement: returnedAmount } },
+        });
+        await adjustCompanyBalance(tx, shipment.order.retailerId, shipment.companyId, -returnedAmount);
+        await writeRetailerLedger(tx, {
+          retailerId: shipment.order.retailerId,
+          companyId: shipment.companyId,
+          delta: -returnedAmount,
+          balanceAfter: Number(afterReturn.pendingCollection),
+          type: 'shipment_return',
+          referenceType: 'Shipment',
+          referenceId: shipmentId,
+          actorId,
         });
       }
     }

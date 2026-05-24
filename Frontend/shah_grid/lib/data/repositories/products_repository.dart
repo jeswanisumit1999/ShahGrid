@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/api_constants.dart';
 import '../../core/network/dio_client.dart';
 import '../models/product_model.dart';
+import '../models/stock_ledger_model.dart';
 import '../models/user_model.dart';
 
 final productsRepositoryProvider = Provider<ProductsRepository>((ref) {
@@ -63,8 +64,13 @@ class ProductsRepository {
         .toList();
   }
 
-  Future<CompanySummary> createCompany(String name) async {
-    final response = await _dio.post(ApiConstants.createCompany, data: {'name': name});
+  Future<CompanySummary> createCompany(String name, {String? gstin, String? phone, String? address}) async {
+    final response = await _dio.post(ApiConstants.createCompany, data: {
+      'name': name,
+      if (gstin != null && gstin.isNotEmpty) 'gstin': gstin,
+      if (phone != null && phone.isNotEmpty) 'phone': phone,
+      if (address != null && address.isNotEmpty) 'address': address,
+    });
     return CompanySummary.fromJson(unwrap<Map<String, dynamic>>(response));
   }
 
@@ -83,5 +89,33 @@ class ProductsRepository {
   Future<List<String>> listBrands() async {
     final response = await _dio.get(ApiConstants.brands);
     return (unwrap<List>(response)).cast<String>();
+  }
+
+  Future<void> deleteProduct(String id) async {
+    await _dio.delete(ApiConstants.productById(id));
+  }
+
+  Future<({List<StockLedgerEntry> items, bool hasMore, String? nextCursor, Map<String, dynamic> product})>
+      getStockLedger(
+    String productId, {
+    String? cursor,
+    int limit = 20,
+    String? direction,
+  }) async {
+    final response = await _dio.get(ApiConstants.stockLedger(productId), queryParameters: {
+      if (cursor != null) 'cursor': cursor,
+      'limit': limit,
+      if (direction != null) 'direction': direction,
+    });
+    final body = response.data as Map<String, dynamic>;
+    final pagination = body['pagination'] as Map<String, dynamic>? ?? {};
+    return (
+      items: (body['data'] as List)
+          .map((e) => StockLedgerEntry.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      hasMore: pagination['hasMore'] as bool? ?? false,
+      nextCursor: pagination['nextCursor'] as String?,
+      product: pagination['product'] as Map<String, dynamic>? ?? {},
+    );
   }
 }

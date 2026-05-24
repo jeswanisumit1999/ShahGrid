@@ -4,15 +4,21 @@ import { sendSuccess } from '../../utils/response';
 
 export async function createOrder(req: Request, res: Response, next: NextFunction) {
   try {
-    const order = await ordersService.createOrder(req.body, req.user!.id);
+    const canDirectSale = req.user!.permissions.includes('orders.direct_sale');
+    const body = {
+      ...req.body,
+      isDirectSale: canDirectSale ? (req.body.isDirectSale ?? false) : false,
+      paidAmount: canDirectSale ? req.body.paidAmount : undefined,
+    };
+    const order = await ordersService.createOrder(body, req.user!.id);
     sendSuccess(res, order, 201);
   } catch (err) { next(err); }
 }
 
 export async function listOrders(req: Request, res: Response, next: NextFunction) {
   try {
-    const { cursor, limit, retailerId, salesOfficerId } = req.query as any;
-    const result = await ordersService.listOrders({ cursor, limit: Number(limit) || 20, retailerId, salesOfficerId });
+    const { cursor, limit, retailerId, salesOfficerId, search } = req.query as any;
+    const result = await ordersService.listOrders({ cursor, limit: Number(limit) || 20, retailerId, salesOfficerId, search });
     sendSuccess(res, result.items, 200, { nextCursor: result.nextCursor, hasMore: result.hasMore });
   } catch (err) { next(err); }
 }
@@ -20,5 +26,25 @@ export async function listOrders(req: Request, res: Response, next: NextFunction
 export async function getOrder(req: Request, res: Response, next: NextFunction) {
   try {
     sendSuccess(res, await ordersService.getOrderById(req.params.id));
+  } catch (err) { next(err); }
+}
+
+export async function updateOrderItem(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await ordersService.updateOrderItemQuantity(
+      req.params.id,
+      req.params.itemId,
+      req.body.quantity,
+      req.user!.id,
+      req.body.unitPrice
+    );
+    sendSuccess(res, result);
+  } catch (err) { next(err); }
+}
+
+export async function addOrderItem(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await ordersService.addOrderItem(req.params.id, req.body, req.user!.id);
+    sendSuccess(res, result, 201);
   } catch (err) { next(err); }
 }

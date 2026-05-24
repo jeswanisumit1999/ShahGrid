@@ -116,12 +116,34 @@ T unwrap<T>(Response response) {
 AppException parseError(Object err) {
   if (err is DioException) {
     if (err.error is AppException) return err.error as AppException;
-    // Network / connection error
-    final msg = err.message ?? err.error?.toString() ?? 'Network error';
-    return AppException(code: 'NETWORK_ERROR', message: msg, statusCode: err.response?.statusCode);
+    return const AppException(code: 'NETWORK_ERROR', message: 'Network error');
   }
   if (err is AppException) return err;
-  // Any other exception (PlatformException from google_sign_in, etc.)
-  final msg = err.toString().replaceFirst('Exception: ', '');
-  return AppException(code: 'UNKNOWN', message: msg);
+  return AppException.unknown();
+}
+
+/// Returns a user-friendly message for any thrown error — never exposes raw exception text.
+String friendlyError(Object err) {
+  final ex = parseError(err);
+  switch (ex.code) {
+    case 'CREDIT_LIMIT_EXCEEDED':     return 'This order exceeds the retailer\'s credit limit';
+    case 'INSUFFICIENT_STOCK':        return 'Insufficient stock for one or more products';
+    case 'PAID_AMOUNT_EXCEEDS_TOTAL': return 'Amount paid cannot exceed the order total';
+    case 'UNAUTHORIZED':              return 'Please sign in to continue';
+    case 'FORBIDDEN':                 return 'You don\'t have permission to do this';
+    case 'NOT_FOUND':                 return 'The requested item was not found';
+    case 'CONFLICT':                  return 'This record already exists';
+    case 'DUPLICATE_PAYMENT':         return 'This payment may already have been recorded';
+    case 'SYSTEM_ROLE':               return 'System roles cannot be modified';
+    case 'ROLE_IN_USE':               return 'This role is currently assigned to users';
+    case 'INVALID_STATUS_TRANSITION': return 'This action cannot be performed at this stage';
+    case 'INVALID_QUANTITY':          return 'Please check the quantities entered';
+    case 'INVALID_ITEMS':             return 'One or more items are invalid';
+    case 'SPLIT_TOO_MANY':            return 'Too many shipments would result from this split';
+    case 'INVALID_SPLIT_STATUS':      return 'This shipment cannot be split at this stage';
+    case 'NETWORK_ERROR':             return 'Connection error — please check your internet and try again';
+    case 'INTERNAL_ERROR':            return 'Something went wrong. Please try again later';
+    case 'VALIDATION_ERROR':          return ex.message;
+    default:                          return 'Something went wrong. Please try again';
+  }
 }

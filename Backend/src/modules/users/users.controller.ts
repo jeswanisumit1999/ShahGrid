@@ -82,3 +82,18 @@ export async function deleteRole(req: Request, res: Response, next: NextFunction
     sendSuccess(res, { message: 'Role deleted' });
   } catch (err) { next(err); }
 }
+
+export async function getActivityLog(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { cursor, limit, search } = req.query as any;
+    const result = await usersService.listActivityLog({
+      cursor,
+      limit: Number(limit) || 30,
+      search,
+    });
+    sendSuccess(res, result.items, 200, {
+      nextCursor: result.nextCursor,
+      hasMore: result.hasMore,
+    });
+  } catch (err) { next(err); }
+}

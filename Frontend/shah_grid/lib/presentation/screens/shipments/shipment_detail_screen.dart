@@ -6,7 +6,7 @@ import '../../providers/auth_provider.dart';
 import '../../../data/models/shipment_model.dart';
 import '../../../data/repositories/shipments_repository.dart';
 import '../../../core/utils/format_utils.dart';
-import '../../../core/errors/app_exception.dart';
+import '../../../core/network/dio_client.dart';
 import '../../widgets/common/app_error_widget.dart';
 import '../../widgets/common/status_badge.dart';
 
@@ -93,26 +93,63 @@ class _ShipmentBodyState extends ConsumerState<_ShipmentBody> {
   }
 
   Future<void> _updateStatus(String newStatus,
-      {List<ItemAdjustment>? adjustments}) async {
-    setState(() {
-      _updating = true;
-      _error = null;
-    });
+      {List<ItemAdjustment>? adjustments, bool force = false}) async {
+    setState(() { _updating = true; _error = null; });
     try {
       await ref.read(shipmentsRepositoryProvider).updateStatus(
             widget.shipment.id,
             newStatus,
             notes: _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
             adjustments: adjustments,
+            force: force,
           );
       ref.invalidate(shipmentDetailProvider(widget.shipment.id));
       ref.invalidate(shipmentsProvider);
     } catch (e) {
-      final msg = e is AppException ? e.message : e.toString();
-      setState(() => _error = msg);
+      // Insufficient stock on Ready for Dispatch → show warning and let user force
+      if (parseError(e).code == 'INSUFFICIENT_STOCK' &&
+          newStatus == 'Ready for Dispatch' &&
+          !force) {
+        setState(() => _updating = false);
+        if (!mounted) return;
+        final confirmed = await _showForceDispatchDialog();
+        if (confirmed == true && mounted) {
+          await _updateStatus(newStatus, adjustments: adjustments, force: true);
+        }
+        return;
+      }
+      setState(() => _error = friendlyError(e));
     } finally {
-      setState(() => _updating = false);
+      if (mounted) setState(() => _updating = false);
     }
+  }
+
+  Future<bool?> _showForceDispatchDialog() {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: Icon(Icons.warning_amber_rounded,
+            color: Theme.of(ctx).colorScheme.tertiary, size: 36),
+        title: const Text('Insufficient Stock'),
+        content: const Text(
+          'One or more items in this shipment exceed available stock.\n\n'
+          'Dispatching will cause stock levels to go negative. '
+          'Please reconcile inventory as soon as possible.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(ctx).colorScheme.tertiary),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Dispatch Anyway'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _onTransitionTap(
@@ -205,7 +242,7 @@ class _ShipmentBodyState extends ConsumerState<_ShipmentBody> {
         context.go('/shipments');
       }
     } catch (e) {
-      final msg = e is AppException ? e.message : e.toString();
+      final msg = friendlyError(e);
       setState(() => _error = msg);
     } finally {
       setState(() => _updating = false);

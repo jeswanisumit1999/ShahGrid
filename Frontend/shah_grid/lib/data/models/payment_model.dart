@@ -8,6 +8,8 @@ class PaymentModel {
     required this.createdAt,
     this.orderId,
     this.retailerName,
+    this.companyId,
+    this.companyName,
     this.referenceNo,
     this.notes,
   });
@@ -16,6 +18,8 @@ class PaymentModel {
   final String? orderId;
   final String retailerId;
   final String? retailerName;
+  final String? companyId;
+  final String? companyName;
   final double amount;
   final String paymentDate;
   final String method;
@@ -29,7 +33,9 @@ class PaymentModel {
         id: json['id'] as String? ?? '',
         orderId: json['orderId'] as String?,
         retailerId: json['retailerId'] as String? ?? '',
-        retailerName: (json['retailer'] as Map?)?.get('name'),
+        retailerName: (json['retailer'] as Map?)?.mapGet('name'),
+        companyId: json['companyId'] as String?,
+        companyName: (json['company'] as Map?)?.mapGet('name'),
         amount: double.tryParse(json['amount']?.toString() ?? '') ?? 0,
         paymentDate: json['paymentDate'] as String? ?? '',
         method: json['method'] as String? ?? '',
@@ -40,5 +46,5 @@ class PaymentModel {
 }
 
 extension _MapExt on Map {
-  String? get(String key) => this[key] as String?;
+  String? mapGet(String key) => this[key] as String?;
 }

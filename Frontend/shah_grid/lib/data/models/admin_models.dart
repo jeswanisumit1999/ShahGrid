@@ -71,3 +71,42 @@ class AdminUserModel {
     );
   }
 }
+
+class ActivityLogEntry {
+  const ActivityLogEntry({
+    required this.id,
+    required this.actorId,
+    required this.actorName,
+    required this.actorEmail,
+    required this.action,
+    required this.entityType,
+    required this.entityId,
+    required this.createdAt,
+    this.entityLabel,
+    this.diff,
+  });
+
+  final String id;
+  final String actorId;
+  final String actorName;
+  final String actorEmail;
+  final String action;
+  final String entityType;
+  final String entityId;
+  final String? entityLabel;
+  final DateTime createdAt;
+  final Map<String, dynamic>? diff;
+
+  factory ActivityLogEntry.fromJson(Map<String, dynamic> j) => ActivityLogEntry(
+        id: j['id'] as String,
+        actorId: j['actorId'] as String,
+        actorName: j['actorName'] as String? ?? 'Unknown',
+        actorEmail: j['actorEmail'] as String? ?? '',
+        action: j['action'] as String,
+        entityType: j['entityType'] as String,
+        entityId: j['entityId'] as String,
+        entityLabel: j['entityLabel'] as String?,
+        createdAt: DateTime.parse(j['createdAt'] as String).toLocal(),
+        diff: j['diff'] as Map<String, dynamic>?,
+      );
+}

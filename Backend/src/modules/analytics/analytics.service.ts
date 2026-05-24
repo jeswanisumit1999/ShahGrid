@@ -40,11 +40,21 @@ export async function getSalesOfficerStats(salesOfficerId: string) {
   };
 }
 
-export async function getStockAlerts(threshold = 10) {
-  return prisma.product.findMany({
-    where: { isActive: true, stockQuantity: { lte: threshold } },
+export async function getStockAlerts() {
+  const products = await prisma.product.findMany({
+    where: { isActive: true, lowStockThreshold: { not: null } },
     orderBy: { stockQuantity: 'asc' },
     include: { company: { select: { id: true, name: true } } },
-    take: 50,
   });
+  return products.filter((p) => p.stockQuantity <= p.lowStockThreshold!).slice(0, 50);
+}
+
+export async function getGodownStats() {
+  const [pendingAvailability, pendingVerification, readyForDispatch] = await Promise.all([
+    prisma.shipment.count({ where: { status: 'Pending Stock Availability' } }),
+    prisma.shipment.count({ where: { status: 'Pending Stock Verification' } }),
+    prisma.shipment.count({ where: { status: 'Ready for Dispatch' } }),
+  ]);
+
+  return { pendingAvailability, pendingVerification, readyForDispatch };
 }

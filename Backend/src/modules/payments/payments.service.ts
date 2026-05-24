@@ -3,11 +3,14 @@ import { prisma } from '../../lib/prisma';
 import { AppError } from '../../errors/AppError';
 import { buildPrismaPage, buildPaginationResult } from '../../utils/pagination';
 import { writeAuditLog } from '../../utils/audit';
+import { writeRetailerLedger } from '../../utils/retailerLedger';
+import { adjustCompanyBalance } from '../../utils/companyBalance';
 
 export async function recordPayment(
   input: {
     orderId?: string;
     retailerId: string;
+    companyId?: string;
     amount: number;
     paymentDate: string;
     method: string;
@@ -41,6 +44,7 @@ export async function recordPayment(
       data: {
         orderId: input.orderId ?? null,
         retailerId: input.retailerId,
+        companyId: input.companyId ?? null,
         amount: input.amount,
         paymentDate: new Date(input.paymentDate),
         method: input.method,
@@ -56,6 +60,22 @@ export async function recordPayment(
       where: { id: input.retailerId },
       data: { pendingCollection: newPending },
     });
+
+    await writeRetailerLedger(tx, {
+      retailerId: input.retailerId,
+      companyId: input.companyId,
+      delta: -input.amount,
+      balanceAfter: newPending,
+      type: 'payment_credit',
+      referenceType: 'Payment',
+      referenceId: payment.id,
+      actorId,
+    });
+
+    // Decrement per-company balance if company specified
+    if (input.companyId) {
+      await adjustCompanyBalance(tx, input.retailerId, input.companyId, -input.amount);
+    }
 
     await writeAuditLog(tx, {
       actorId,
@@ -74,10 +94,17 @@ export async function listPayments(params: {
   limit: number;
   orderId?: string;
   retailerId?: string;
+  search?: string;
 }) {
   const where: Prisma.PaymentWhereInput = {
     ...(params.orderId && { orderId: params.orderId }),
     ...(params.retailerId && { retailerId: params.retailerId }),
+    ...(params.search && {
+      OR: [
+        { retailer: { name: { contains: params.search, mode: 'insensitive' } } },
+        { referenceNo: { contains: params.search, mode: 'insensitive' } },
+      ],
+    }),
   };
 
   const payments = await prisma.payment.findMany({
@@ -87,6 +114,7 @@ export async function listPayments(params: {
     include: {
       order: { select: { id: true } },
       retailer: { select: { id: true, name: true } },
+      company: { select: { id: true, name: true } },
     },
   });
 

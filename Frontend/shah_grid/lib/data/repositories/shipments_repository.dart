@@ -54,12 +54,14 @@ class ShipmentsRepository {
     String status, {
     String? notes,
     List<ItemAdjustment>? adjustments,
+    bool force = false,
   }) async {
     final response = await _dio.patch(ApiConstants.shipmentStatus(id), data: {
       'status': status,
       if (notes != null && notes.isNotEmpty) 'notes': notes,
       if (adjustments != null && adjustments.isNotEmpty)
         'adjustments': adjustments.map((a) => a.toJson()).toList(),
+      if (force) 'force': true,
     });
     return ShipmentModel.fromJson(unwrap<Map<String, dynamic>>(response));
   }

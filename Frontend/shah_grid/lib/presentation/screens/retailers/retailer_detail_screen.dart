@@ -9,6 +9,7 @@ import '../../../data/models/retailer_model.dart';
 import '../../../data/models/admin_models.dart';
 import '../../../core/utils/format_utils.dart';
 import '../../widgets/common/app_error_widget.dart';
+import '../../../core/network/dio_client.dart';
 
 class RetailerDetailScreen extends ConsumerWidget {
   const RetailerDetailScreen({super.key, required this.id});
@@ -17,9 +18,9 @@ class RetailerDetailScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(retailerDetailProvider(id));
-    final canManage = ref.watch(authStateProvider).valueOrNull
-            ?.hasPermission('retailers', 'manage') ??
-        false;
+    final authUser = ref.watch(authStateProvider).valueOrNull;
+    final canManage = authUser?.hasPermission('retailers', 'manage') ?? false;
+    final canEditCreditLimit = authUser?.hasPermission('retailers', 'credit_limit') ?? false;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Retailer')),
@@ -62,11 +63,11 @@ class RetailerDetailScreen extends ConsumerWidget {
                     _InfoRow(
                       'Credit Limit',
                       formatCurrency(retailer.creditLimit),
-                      onEdit: canManage
+                      onEdit: canEditCreditLimit
                           ? () => _editCreditLimit(context, ref, retailer.creditLimit)
                           : null,
                     ),
-                    _InfoRow('Pending Collection', formatCurrency(retailer.pendingCollection)),
+                    _InfoRow('Total Pending', formatCurrency(retailer.pendingCollection)),
                     _InfoRow('Available Credit', formatCurrency(retailer.availableCredit)),
                     _InfoRow('Status', retailer.isActive ? 'Active' : 'Inactive'),
                     _InfoRow('Created', formatDate(retailer.createdAt)),
@@ -74,6 +75,38 @@ class RetailerDetailScreen extends ConsumerWidget {
                 ),
               ),
             ),
+            if (retailer.companyBalances.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Card(
+                margin: EdgeInsets.zero,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Pending by Company',
+                          style: Theme.of(context).textTheme.titleSmall),
+                      const SizedBox(height: 8),
+                      ...retailer.companyBalances.map((b) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(children: [
+                          Expanded(child: Text(b.companyName)),
+                          Text(
+                            formatCurrency(b.pendingAmount),
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: b.pendingAmount > 0
+                                  ? Theme.of(context).colorScheme.error
+                                  : null,
+                            ),
+                          ),
+                        ]),
+                      )),
+                    ],
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -107,6 +140,12 @@ class RetailerDetailScreen extends ConsumerWidget {
               onPressed: () => context.go('/orders?retailerId=$id'),
               icon: const Icon(Icons.receipt_long),
               label: const Text('View Orders'),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () => context.go('/retailers/$id/ledger'),
+              icon: const Icon(Icons.menu_book_outlined),
+              label: const Text('Payment Ledger'),
             ),
           ],
         ),
@@ -164,7 +203,7 @@ class RetailerDetailScreen extends ConsumerWidget {
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text(e.toString()),
+                      content: Text(friendlyError(e)),
                       backgroundColor: Colors.red,
                     ),
                   );
@@ -222,7 +261,7 @@ class _AssignOfficersSheetState extends State<_AssignOfficersSheet> {
         });
       }
     } catch (e) {
-      if (mounted) setState(() { _error = e.toString(); _loading = false; });
+      if (mounted) setState(() { _error = friendlyError(e); _loading = false; });
     }
   }
 
@@ -236,7 +275,7 @@ class _AssignOfficersSheetState extends State<_AssignOfficersSheet> {
       widget.onSaved();
       if (mounted) Navigator.pop(context);
     } catch (e) {
-      if (mounted) setState(() { _error = e.toString(); _saving = false; });
+      if (mounted) setState(() { _error = friendlyError(e); _saving = false; });
     }
   }
 

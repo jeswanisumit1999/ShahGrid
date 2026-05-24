@@ -5,7 +5,7 @@ import { requirePermission } from '../../middleware/rbac.middleware';
 
 const router = Router();
 
-router.use(authenticate, requirePermission('analytics', 'read'));
+router.use(authenticate);
 
 /**
  * @openapi
@@ -37,7 +37,7 @@ router.use(authenticate, requirePermission('analytics', 'read'));
  *       403:
  *         $ref: '#/components/responses/Forbidden'
  */
-router.get('/dashboard', controller.getDashboard);
+router.get('/dashboard', requirePermission('analytics', 'read'), controller.getDashboard);
 
 /**
  * @openapi
@@ -94,5 +94,7 @@ router.get('/my-stats', controller.getMyStats);
  *         $ref: '#/components/responses/Forbidden'
  */
 router.get('/stock-alerts', controller.getStockAlerts);
+
+router.get('/godown-stats', requirePermission('shipments', 'manage'), controller.getGodownStats);
 
 export default router;

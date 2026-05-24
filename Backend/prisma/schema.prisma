@@ -31,6 +31,8 @@ model User {
   checkIns               CheckIn[]
   updatedSettings        AppSetting[]
   deviceTokens           DeviceToken[]
+  directSalesCreated     DirectSale[]            @relation("DirectSaleCreatedBy")
+  directSalesAsSO        DirectSale[]            @relation("DirectSaleSalesOfficer")
 
   @@map("users")
 }
@@ -113,13 +115,46 @@ model Retailer {
   createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt             DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
-  salesOfficers RetailerSalesOfficer[]
-  orders        Order[]
-  payments      Payment[]
-  returns       Return[]
-  visitLogs     VisitLog[]
+  salesOfficers   RetailerSalesOfficer[]
+  orders          Order[]
+  payments        Payment[]
+  returns         Return[]
+  visitLogs       VisitLog[]
+  companyBalances RetailerCompanyBalance[]
+  retailerLedger  RetailerLedger[]
 
   @@map("retailers")
+}
+
+model RetailerCompanyBalance {
+  retailerId    String  @map("retailer_id") @db.Uuid
+  companyId     String  @map("company_id") @db.Uuid
+  pendingAmount Decimal @default(0) @map("pending_amount") @db.Decimal(12, 2)
+
+  retailer Retailer @relation(fields: [retailerId], references: [id])
+  company  Company  @relation(fields: [companyId], references: [id])
+
+  @@id([retailerId, companyId])
+  @@map("retailer_company_balances")
+}
+
+model RetailerLedger {
+  id            String   @id @default(uuid()) @db.Uuid
+  retailerId    String   @map("retailer_id") @db.Uuid
+  companyId     String?  @map("company_id") @db.Uuid
+  delta         Decimal  @db.Decimal(12, 2)
+  balanceAfter  Decimal  @map("balance_after") @db.Decimal(12, 2)
+  type          String   @db.VarChar(40)
+  referenceType String?  @map("reference_type") @db.VarChar(32)
+  referenceId   String?  @map("reference_id") @db.VarChar(64)
+  notes         String?  @db.VarChar(512)
+  actorId       String?  @map("actor_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  retailer Retailer @relation(fields: [retailerId], references: [id])
+
+  @@index([retailerId, createdAt(sort: Desc)])
+  @@map("retailer_ledger")
 }
 
 model RetailerSalesOfficer {
@@ -141,12 +176,17 @@ model RetailerSalesOfficer {
 model Company {
   id        String   @id @default(uuid()) @db.Uuid
   name      String   @unique @db.VarChar(255)
+  gstin     String?  @db.VarChar(15)
+  phone     String?  @db.VarChar(20)
+  address   String?  @db.VarChar(512)
   isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
 
-  products      Product[]
-  shipments     Shipment[]
-  overrideOrders Order[] @relation("OrderOverrideCompany")
+  products        Product[]
+  shipments       Shipment[]
+  overrideOrders  Order[]                  @relation("OrderOverrideCompany")
+  retailerBalances RetailerCompanyBalance[]
+  payments        Payment[]
 
   @@map("companies")
 }
@@ -171,8 +211,9 @@ model Product {
   brand         String?  @db.VarChar(128)
   price         Decimal  @db.Decimal(10, 2)
   // DB CHECK constraint enforces non-negative: CHECK (stock_quantity >= 0)
-  stockQuantity Int      @default(0) @map("stock_quantity")
-  isActive      Boolean  @default(true) @map("is_active")
+  stockQuantity      Int      @default(0) @map("stock_quantity")
+  lowStockThreshold  Int?     @map("low_stock_threshold")
+  isActive           Boolean  @default(true) @map("is_active")
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -180,6 +221,8 @@ model Product {
   category         Category?        @relation(fields: [categoryId], references: [id])
   orderItems       OrderItem[]
   stockAdjustments StockAdjustment[]
+  stockLedger      StockLedger[]
+  directSaleItems  DirectSaleItem[]
 
   @@map("products")
 }
@@ -198,6 +241,7 @@ model Order {
   // Populated when sales officer overrides the assigned company
   overrideCompanyId String? @map("override_company_id") @db.Uuid
   totalAmount      Decimal  @db.Decimal(12, 2) @map("total_amount")
+  challanNumber    String?  @map("challan_number") @db.VarChar(16)
   notes            String?  @db.VarChar(1024)
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz
@@ -240,8 +284,9 @@ model Shipment {
   orderId      String    @map("order_id") @db.Uuid
   companyId    String    @map("company_id") @db.Uuid
   // Status is managed via state machine in service layer — never updated directly
-  status       String    @default("Pending Stock Verification") @db.VarChar(40)
-  readyAt      DateTime? @map("ready_at") @db.Timestamptz
+  status        String    @default("Pending Stock Verification") @db.VarChar(40)
+  challanNumber String?   @map("challan_number") @db.VarChar(16)
+  readyAt       DateTime? @map("ready_at") @db.Timestamptz
   deliveredAt  DateTime? @map("delivered_at") @db.Timestamptz
   returnedAt   DateTime? @map("returned_at") @db.Timestamptz
   notes        String?   @db.VarChar(1024)
@@ -276,6 +321,7 @@ model Payment {
   id             String   @id @default(uuid()) @db.Uuid
   orderId        String?  @map("order_id") @db.Uuid
   retailerId     String   @map("retailer_id") @db.Uuid
+  companyId      String?  @map("company_id") @db.Uuid
   amount         Decimal  @db.Decimal(12, 2)
   paymentDate    DateTime @map("payment_date") @db.Date
   method         String   @db.VarChar(32)
@@ -287,6 +333,7 @@ model Payment {
 
   order    Order?   @relation(fields: [orderId], references: [id])
   retailer Retailer @relation(fields: [retailerId], references: [id])
+  company  Company? @relation(fields: [companyId], references: [id])
 
   @@map("payments")
 }
@@ -321,6 +368,28 @@ model ReturnItem {
 // ─────────────────────────────────────────────
 // OPERATIONS DOMAIN
 // ─────────────────────────────────────────────
+
+// Append-only passbook of every stock movement for a product.
+// actorId / referenceId are loose (no FK) so records survive soft-deletes.
+model StockLedger {
+  id            String   @id @default(uuid()) @db.Uuid
+  productId     String   @map("product_id") @db.Uuid
+  delta         Int
+  balanceAfter  Int      @map("balance_after")
+  // movement type: manual_in | manual_out | dispatch_out | dispatch_cancel_in
+  //   | delivery_short_in | shipment_return_in | direct_sale_out | order_return_in
+  type          String   @db.VarChar(40)
+  referenceType String?  @map("reference_type") @db.VarChar(32)
+  referenceId   String?  @map("reference_id") @db.VarChar(64)
+  notes         String?  @db.VarChar(512)
+  actorId       String?  @map("actor_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([productId, createdAt(sort: Desc)])
+  @@map("stock_ledger")
+}
 
 model StockAdjustment {
   id          String   @id @default(uuid()) @db.Uuid
@@ -364,6 +433,42 @@ model CheckIn {
   user User @relation(fields: [userId], references: [id])
 
   @@map("check_ins")
+}
+
+// ─────────────────────────────────────────────
+// DIRECT SALES DOMAIN
+// ─────────────────────────────────────────────
+
+model DirectSale {
+  id             String   @id @default(uuid()) @db.Uuid
+  customerName   String   @map("customer_name") @db.VarChar(255)
+  salesOfficerId String   @map("sales_officer_id") @db.Uuid
+  createdById    String   @map("created_by_id") @db.Uuid
+  totalAmount    Decimal  @db.Decimal(12, 2) @map("total_amount")
+  amountPaid     Decimal? @db.Decimal(12, 2) @map("amount_paid")
+  challanNumber  String?  @map("challan_number") @db.VarChar(16)
+  notes          String?  @db.VarChar(1024)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  salesOfficer User             @relation("DirectSaleSalesOfficer", fields: [salesOfficerId], references: [id])
+  createdBy    User             @relation("DirectSaleCreatedBy", fields: [createdById], references: [id])
+  items        DirectSaleItem[]
+
+  @@map("direct_sales")
+}
+
+model DirectSaleItem {
+  id           String  @id @default(uuid()) @db.Uuid
+  directSaleId String  @map("direct_sale_id") @db.Uuid
+  productId    String  @map("product_id") @db.Uuid
+  quantity     Int
+  unitPrice    Decimal @db.Decimal(10, 2) @map("unit_price")
+
+  directSale DirectSale @relation(fields: [directSaleId], references: [id])
+  product    Product    @relation(fields: [productId], references: [id])
+
+  @@map("direct_sale_items")
 }
 
 model AppSetting {

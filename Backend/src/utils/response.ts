@@ -4,6 +4,7 @@ interface PaginationMeta {
   nextCursor: string | null;
   hasMore: boolean;
   total?: number;
+  [key: string]: unknown;
 }
 
 export function sendSuccess<T>(

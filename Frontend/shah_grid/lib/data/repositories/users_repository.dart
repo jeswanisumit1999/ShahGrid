@@ -80,4 +80,25 @@ class UsersRepository {
     );
     return RoleModel.fromJson(unwrap<Map<String, dynamic>>(response));
   }
+
+  Future<PaginatedResult<ActivityLogEntry>> listActivityLog({
+    String? cursor,
+    int limit = 30,
+    String? search,
+  }) async {
+    final response = await _dio.get(ApiConstants.activityLog, queryParameters: {
+      if (cursor != null) 'cursor': cursor,
+      'limit': limit,
+      if (search != null && search.isNotEmpty) 'search': search,
+    });
+    final body = response.data as Map<String, dynamic>;
+    final pagination = body['pagination'] as Map<String, dynamic>? ?? {};
+    return PaginatedResult(
+      items: (body['data'] as List)
+          .map((e) => ActivityLogEntry.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      hasMore: pagination['hasMore'] as bool? ?? false,
+      nextCursor: pagination['nextCursor'] as String?,
+    );
+  }
 }

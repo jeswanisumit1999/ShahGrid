@@ -12,6 +12,8 @@ export const SHIPMENT_STATUSES = [
 export const updateShipmentStatusSchema = z.object({
   status: z.enum(SHIPMENT_STATUSES),
   notes: z.string().max(1024).optional(),
+  // When true, allows stock to go negative on "Ready for Dispatch" (user-confirmed override)
+  force: z.boolean().optional(),
   // Per-item quantity adjustments — only honoured when transitioning to Delivered
   adjustments: z
     .array(

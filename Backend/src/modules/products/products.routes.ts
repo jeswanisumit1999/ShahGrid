@@ -3,7 +3,7 @@ import * as controller from './products.controller';
 import { authenticate } from '../../middleware/auth.middleware';
 import { requirePermission } from '../../middleware/rbac.middleware';
 import { validate } from '../../middleware/validate.middleware';
-import { createProductSchema, updateProductSchema, adjustStockSchema, listProductsQuerySchema } from './products.validators';
+import { createProductSchema, updateProductSchema, adjustStockSchema, listProductsQuerySchema, stockLedgerQuerySchema } from './products.validators';
 
 const router = Router();
 
@@ -138,6 +138,7 @@ router.post('/', requirePermission('products', 'manage'), validate(createProduct
  *         $ref: '#/components/responses/NotFound'
  */
 router.patch('/:id', requirePermission('products', 'manage'), validate(updateProductSchema), controller.updateProduct);
+router.delete('/:id', requirePermission('products', 'manage'), controller.deleteProduct);
 
 /**
  * @openapi
@@ -183,5 +184,6 @@ router.patch('/:id', requirePermission('products', 'manage'), validate(updatePro
  *         $ref: '#/components/responses/NotFound'
  */
 router.post('/:id/stock-adjust', requirePermission('stock', 'update'), validate(adjustStockSchema), controller.adjustStock);
+router.get('/:id/ledger', requirePermission('stock', 'update'), validate(stockLedgerQuerySchema, 'query'), controller.getStockLedger);
 
 export default router;

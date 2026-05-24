@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/auth_provider.dart';
-import '../../../core/errors/app_exception.dart';
+import '../../../core/network/dio_client.dart';
 import '../../../core/utils/web_redirect.dart';
 
 // Backend OAuth entry point — browser lands here, gets redirected to Google.
@@ -19,7 +19,7 @@ class LoginScreen extends ConsumerWidget {
     ref.listen(authStateProvider, (_, next) {
       if (next.hasError) {
         final err = next.error;
-        final msg = err is AppException ? err.message : 'Sign-in failed. Please try again.';
+        final msg = friendlyError(err!);
         ScaffoldMessenger.of(context)
           ..hideCurrentSnackBar()
           ..showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));

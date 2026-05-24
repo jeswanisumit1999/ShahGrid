@@ -8,6 +8,7 @@ export const createProductSchema = z.object({
   brand: z.string().max(128).optional(),
   price: z.number().positive(),
   stockQuantity: z.number().int().min(0).default(0),
+  lowStockThreshold: z.number().int().min(0).optional(),
 });
 
 export const updateProductSchema = createProductSchema.partial().omit({ sku: true });
@@ -23,4 +24,10 @@ export const listProductsQuerySchema = z.object({
   search: z.string().optional(),
   companyId: z.string().uuid().optional(),
   categoryId: z.string().uuid().optional(),
+});
+
+export const stockLedgerQuerySchema = z.object({
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  direction: z.enum(['in', 'out']).optional(),
 });

@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../data/repositories/retailers_repository.dart';
-import '../../../core/errors/app_exception.dart';
+import '../../../core/network/dio_client.dart';
 import '../../providers/retailers_provider.dart';
+import '../../providers/auth_provider.dart';
 
 class CreateRetailerScreen extends ConsumerStatefulWidget {
   const CreateRetailerScreen({super.key});
@@ -18,7 +19,8 @@ class _CreateRetailerScreenState extends ConsumerState<CreateRetailerScreen> {
   final _phoneCtrl = TextEditingController();
   final _addressCtrl = TextEditingController();
   final _gstinCtrl = TextEditingController();
-  final _creditCtrl = TextEditingController(text: '0');
+  final _creditCtrl = TextEditingController(text: '10000');
+  final _pendingCtrl = TextEditingController(text: '0');
   bool _saving = false;
   String? _error;
 
@@ -29,6 +31,7 @@ class _CreateRetailerScreenState extends ConsumerState<CreateRetailerScreen> {
     _addressCtrl.dispose();
     _gstinCtrl.dispose();
     _creditCtrl.dispose();
+    _pendingCtrl.dispose();
     super.dispose();
   }
 
@@ -36,23 +39,29 @@ class _CreateRetailerScreenState extends ConsumerState<CreateRetailerScreen> {
     if (!(_formKey.currentState?.validate() ?? false)) return;
     setState(() { _saving = true; _error = null; });
     try {
+      final pending = double.tryParse(_pendingCtrl.text) ?? 0;
       final retailer = await ref.read(retailersRepositoryProvider).create({
         'name': _nameCtrl.text.trim(),
         'phone': _phoneCtrl.text.trim(),
         if (_addressCtrl.text.trim().isNotEmpty) 'address': _addressCtrl.text.trim(),
         if (_gstinCtrl.text.trim().isNotEmpty) 'gstin': _gstinCtrl.text.trim().toUpperCase(),
         'creditLimit': double.parse(_creditCtrl.text),
+        if (pending > 0) 'initialPendingAmount': pending,
       });
       ref.invalidate(retailersProvider);
       if (mounted) context.go('/retailers/${retailer.id}');
     } catch (e) {
-      final ex = e is AppException ? e : AppException.unknown();
-      setState(() { _error = ex.message; _saving = false; });
+      setState(() { _error = friendlyError(e); _saving = false; });
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final canSetCreditLimit =
+        ref.watch(authStateProvider).valueOrNull?.hasPermission('retailers', 'credit_limit') ?? false;
+    if (!canSetCreditLimit && _creditCtrl.text != '10000') {
+      _creditCtrl.text = '10000';
+    }
     return Scaffold(
       appBar: AppBar(title: const Text('Add Retailer')),
       body: Form(
@@ -100,14 +109,32 @@ class _CreateRetailerScreenState extends ConsumerState<CreateRetailerScreen> {
             const SizedBox(height: 12),
             TextFormField(
               controller: _creditCtrl,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Credit Limit (₹) *',
                 prefixText: '₹ ',
+                helperText: canSetCreditLimit ? null : 'Set by Admin — default ₹10,000',
               ),
               keyboardType: TextInputType.number,
+              readOnly: !canSetCreditLimit,
               validator: (v) {
                 final n = double.tryParse(v ?? '');
                 if (n == null || n < 0) return 'Enter a valid amount';
+                return null;
+              },
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _pendingCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Existing Pending Amount (₹)',
+                prefixText: '₹ ',
+                helperText: 'Leave 0 for new retailers. For migrated retailers, enter the outstanding balance they already owe.',
+                helperMaxLines: 2,
+              ),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              validator: (v) {
+                final n = double.tryParse(v ?? '');
+                if (n == null || n < 0) return 'Enter 0 or a positive amount';
                 return null;
               },
             ),

@@ -3,15 +3,23 @@ import { prisma } from '../../lib/prisma';
 import { AppError } from '../../errors/AppError';
 import { buildPrismaPage, buildPaginationResult } from '../../utils/pagination';
 import { writeAuditLog } from '../../utils/audit';
+import { writeStockLedger } from '../../utils/stockLedger';
 
 export async function listCompanies() {
   return prisma.company.findMany({ where: { isActive: true }, orderBy: { name: 'asc' } });
 }
 
-export async function createCompany(name: string) {
+export async function createCompany(name: string, gstin?: string, phone?: string, address?: string) {
   const existing = await prisma.company.findUnique({ where: { name } });
   if (existing) throw AppError.conflict(`Company "${name}" already exists`);
-  return prisma.company.create({ data: { name } });
+  return prisma.company.create({
+    data: {
+      name,
+      ...(gstin ? { gstin } : {}),
+      ...(phone ? { phone } : {}),
+      ...(address ? { address } : {}),
+    },
+  });
 }
 
 export async function listCategories() {
@@ -80,6 +88,7 @@ export async function createProduct(data: {
   brand?: string;
   price: number;
   stockQuantity: number;
+  lowStockThreshold?: number;
 }) {
   if (data.sku) {
     const existing = await prisma.product.findUnique({ where: { sku: data.sku } });
@@ -95,10 +104,18 @@ export async function updateProduct(id: string, data: Partial<{
   brand: string;
   price: number;
   stockQuantity: number;
+  lowStockThreshold: number | null;
 }>) {
   const product = await prisma.product.findUnique({ where: { id } });
   if (!product) throw AppError.notFound('Product');
   return prisma.product.update({ where: { id }, data });
+}
+
+export async function deleteProduct(id: string) {
+  const product = await prisma.product.findUnique({ where: { id } });
+  if (!product) throw AppError.notFound('Product');
+  if (!product.isActive) throw AppError.conflict('Product is already deleted');
+  return prisma.product.update({ where: { id }, data: { isActive: false } });
 }
 
 export async function adjustStock(
@@ -135,6 +152,15 @@ export async function adjustStock(
       },
     });
 
+    await writeStockLedger(tx, {
+      productId,
+      delta,
+      balanceAfter: newStock,
+      type: delta > 0 ? 'manual_in' : 'manual_out',
+      notes: reason,
+      actorId,
+    });
+
     await writeAuditLog(tx, {
       actorId,
       action: 'adjust_stock',
@@ -145,4 +171,47 @@ export async function adjustStock(
 
     return updated;
   });
+}
+
+export async function getStockLedger(productId: string, params: {
+  cursor?: string;
+  limit: number;
+  direction?: 'in' | 'out';
+}) {
+  const product = await prisma.product.findUnique({
+    where: { id: productId },
+    include: { company: { select: { name: true } } },
+  });
+  if (!product) throw AppError.notFound('Product');
+
+  const where = {
+    productId,
+    ...(params.direction === 'in'  && { delta: { gt: 0 } }),
+    ...(params.direction === 'out' && { delta: { lt: 0 } }),
+  };
+
+  const entries = await prisma.stockLedger.findMany({
+    where,
+    orderBy: { createdAt: 'desc' },
+    ...buildPrismaPage(params),
+  });
+
+  const result = buildPaginationResult(entries, params.limit);
+
+  // Enrich with actor names (loose FK — manual join)
+  const actorIds = [...new Set(result.items.map((e) => e.actorId).filter(Boolean))] as string[];
+  const actors = actorIds.length
+    ? await prisma.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, name: true } })
+    : [];
+  const actorMap = Object.fromEntries(actors.map((a) => [a.id, a.name]));
+
+  return {
+    product,
+    items: result.items.map((e) => ({
+      ...e,
+      actorName: e.actorId ? (actorMap[e.actorId] ?? null) : null,
+    })),
+    hasMore: result.hasMore,
+    nextCursor: result.nextCursor,
+  };
 }

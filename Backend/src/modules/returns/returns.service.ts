@@ -3,6 +3,9 @@ import { prisma } from '../../lib/prisma';
 import { AppError } from '../../errors/AppError';
 import { buildPrismaPage, buildPaginationResult } from '../../utils/pagination';
 import { writeAuditLog } from '../../utils/audit';
+import { writeStockLedger } from '../../utils/stockLedger';
+import { writeRetailerLedger } from '../../utils/retailerLedger';
+import { adjustCompanyBalance } from '../../utils/companyBalance';
 
 interface ReturnItemInput {
   orderItemId: string;
@@ -66,9 +69,18 @@ export async function createReturn(
     // Restore stock for returned items
     for (const item of input.items) {
       const orderItem = orderItemMap[item.orderItemId];
-      await tx.product.update({
+      const updatedProduct = await tx.product.update({
         where: { id: orderItem.productId },
         data: { stockQuantity: { increment: item.quantity } },
+      });
+      await writeStockLedger(tx, {
+        productId: orderItem.productId,
+        delta: item.quantity,
+        balanceAfter: updatedProduct.stockQuantity,
+        type: 'order_return_in',
+        referenceType: 'Return',
+        referenceId: returnRecord.id,
+        actorId,
       });
 
       // Reduce delivered quantity
@@ -78,12 +90,34 @@ export async function createReturn(
       });
     }
 
-    // Decrement pendingCollection by return value
+    // Decrement pendingCollection by return value (and per-company balances)
     const newPending = Math.max(0, Number(retailer.pendingCollection) - returnValue);
     await tx.retailer.update({
       where: { id: input.retailerId },
       data: { pendingCollection: newPending },
     });
+
+    await writeRetailerLedger(tx, {
+      retailerId: input.retailerId,
+      delta: -returnValue,
+      balanceAfter: newPending,
+      type: 'return_credit',
+      referenceType: 'Return',
+      referenceId: returnRecord.id,
+      actorId,
+    });
+
+    // Decrement per-company balances
+    const companyReturnAmounts = new Map<string, number>();
+    for (const item of input.items) {
+      const orderItem = orderItemMap[item.orderItemId];
+      const cid = order.overrideCompanyId ?? orderItem.product.companyId;
+      const amount = item.quantity * Number(orderItem.unitPrice);
+      companyReturnAmounts.set(cid, (companyReturnAmounts.get(cid) ?? 0) + amount);
+    }
+    for (const [cid, amount] of companyReturnAmounts) {
+      await adjustCompanyBalance(tx, input.retailerId, cid, -amount);
+    }
 
     await writeAuditLog(tx, {
       actorId,

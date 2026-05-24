@@ -24,6 +24,7 @@ import visitsRoutes from './modules/visits/visits.routes';
 import checkInsRoutes from './modules/checkins/checkins.routes';
 import analyticsRoutes from './modules/analytics/analytics.routes';
 import settingsRoutes from './modules/settings/settings.routes';
+import directSalesRoutes from './modules/direct-sales/direct-sales.routes';
 
 const app = express();
 
@@ -91,6 +92,7 @@ app.use(`${api}/visits`, visitsRoutes);
 app.use(`${api}/checkins`, checkInsRoutes);
 app.use(`${api}/analytics`, analyticsRoutes);
 app.use(`${api}/settings`, settingsRoutes);
+app.use(`${api}/direct-sales`, directSalesRoutes);
 
 // ── 404 ───────────────────────────────────────────────────────────────────────
 app.use((_req, res) => {

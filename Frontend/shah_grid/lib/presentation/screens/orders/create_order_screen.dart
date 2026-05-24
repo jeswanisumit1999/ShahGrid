@@ -8,13 +8,18 @@ import '../../../data/models/product_model.dart';
 import '../../../data/repositories/products_repository.dart';
 import '../../../data/repositories/orders_repository.dart';
 import '../../../data/repositories/retailers_repository.dart';
-import '../../../core/errors/app_exception.dart';
+import '../../../data/repositories/settings_repository.dart';
+import '../../../core/network/dio_client.dart';
 import '../../../core/utils/format_utils.dart';
 
-// Loaded once per screen instance — companies for override selector
 final _orderCompaniesProvider =
     FutureProvider.autoDispose<List<CompanySummary>>(
         (ref) => ref.read(productsRepositoryProvider).listCompanies());
+
+final _creditOverrideEnabledProvider = FutureProvider.autoDispose<bool>((ref) async {
+  final settings = await ref.read(settingsRepositoryProvider).list();
+  return settings.any((s) => s.key == 'allow_credit_override' && s.boolValue);
+});
 
 class CreateOrderScreen extends ConsumerStatefulWidget {
   const CreateOrderScreen({super.key});
@@ -26,7 +31,6 @@ class CreateOrderScreen extends ConsumerStatefulWidget {
 class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
   RetailerModel? _selectedRetailer;
   String? _overrideCompanyId;
-  bool _isDirectSale = false;
   final List<_OrderLine> _lines = [];
   final _notesCtrl = TextEditingController();
   bool _submitting = false;
@@ -55,14 +59,13 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
           'quantity': l.qty,
           'unitPrice': l.unitPrice,
         }).toList(),
-        isDirectSale: _isDirectSale,
         overrideCompanyId: _overrideCompanyId,
         notes: _notesCtrl.text,
       );
       ref.invalidate(ordersProvider);
       if (mounted) context.go('/orders/${order.id}');
     } catch (e) {
-      final msg = e is AppException ? e.message : e.toString();
+      final msg = friendlyError(e);
       setState(() { _error = msg; _submitting = false; });
     }
   }
@@ -70,115 +73,187 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(authStateProvider).valueOrNull;
-    final canOverride = user?.hasRole('Admin') == true ||
-        user?.hasRole('Supply Chain') == true;
+    final canOverride = user?.hasPermission('orders', 'manage') == true ||
+        user?.hasPermission('shipments', 'manage') == true;
+
+    final canEditPrice = user?.hasPermission('orders', 'create') == true ||
+        user?.hasPermission('orders', 'manage') == true;
+
+    final creditOverrideEnabled =
+        ref.watch(_creditOverrideEnabledProvider).valueOrNull ?? false;
+    final creditExceeded = _selectedRetailer != null &&
+        _lines.isNotEmpty &&
+        _total > _selectedRetailer!.availableCredit;
 
     return Scaffold(
       appBar: AppBar(title: const Text('New Order')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Retailer picker
+          // ── Retailer ──────────────────────────────────────────────────────
           Text('Retailer', style: Theme.of(context).textTheme.titleSmall),
           const SizedBox(height: 8),
           _RetailerPickerTile(
             selected: _selectedRetailer,
             onSelected: (r) => setState(() => _selectedRetailer = r),
           ),
-          const SizedBox(height: 12),
-
-          // Direct Sale toggle
-          Card(
-            margin: EdgeInsets.zero,
-            child: SwitchListTile(
-              title: const Text('Direct Sale'),
-              subtitle: const Text('Stock deducted immediately — no shipment created'),
-              value: _isDirectSale,
-              onChanged: (v) => setState(() => _isDirectSale = v),
-            ),
-          ),
           const SizedBox(height: 20),
 
-          // Company override (Admin / Supply Chain only)
-          if (canOverride) ...[
-            Text('Override Fulfilling Company',
-                style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: 4),
-            Text(
-              'Force all shipments to come from one company '
-              'regardless of each product\'s assigned company.',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 8),
-            ref.watch(_orderCompaniesProvider).when(
-              loading: () => const LinearProgressIndicator(),
-              error: (_, __) => const SizedBox.shrink(),
-              data: (companies) => DropdownButtonFormField<String>(
-                key: ValueKey('override-${companies.length}-$_overrideCompanyId'),
-                decoration: const InputDecoration(
-                  labelText: 'Company (optional)',
-                  border: OutlineInputBorder(),
-                ),
-                initialValue: companies.any((c) => c.id == _overrideCompanyId)
-                    ? _overrideCompanyId
-                    : null,
-                items: [
-                  const DropdownMenuItem(value: null, child: Text('— Per product (default) —')),
-                  ...companies.map((c) =>
-                      DropdownMenuItem(value: c.id, child: Text(c.name))),
-                ],
-                onChanged: (v) => setState(() => _overrideCompanyId = v),
-              ),
-            ),
-            const SizedBox(height: 20),
-          ],
-
-          // Items
+          // ── Items ─────────────────────────────────────────────────────────
           Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
             Text('Items', style: Theme.of(context).textTheme.titleSmall),
-            TextButton.icon(
-              onPressed: _pickProduct,
-              icon: const Icon(Icons.add),
-              label: const Text('Add Product'),
-            ),
+            if (_lines.isNotEmpty)
+              TextButton.icon(
+                onPressed: _pickProduct,
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Add'),
+              ),
           ]),
-          ..._lines.asMap().entries.map((e) => _OrderLineTile(
-                line: e.value,
-                canEditPrice: user?.hasRole('Admin') == true,
-                onRemove: () => setState(() => _lines.removeAt(e.key)),
-                onQtyChanged: (q) => setState(() => _lines[e.key] = e.value.withQty(q)),
-                onPriceChanged: (p) => setState(() => _lines[e.key] = e.value.withUnitPrice(p)),
-              )),
+          const SizedBox(height: 8),
 
-          if (_lines.isNotEmpty) ...[
+          if (_lines.isEmpty)
+            // Tappable empty state — impossible to miss
+            InkWell(
+              onTap: _pickProduct,
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.4),
+                    width: 1.5,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.add_circle_outline,
+                        size: 36,
+                        color: Theme.of(context).colorScheme.primary),
+                    const SizedBox(height: 8),
+                    Text('Tap to add products',
+                        style: TextStyle(
+                            color: Theme.of(context).colorScheme.primary,
+                            fontWeight: FontWeight.w500)),
+                  ],
+                ),
+              ),
+            )
+          else ...[
+            ..._lines.asMap().entries.map((e) => _OrderLineTile(
+                  line: e.value,
+                  canEditPrice: canEditPrice,
+                  onRemove: () => setState(() => _lines.removeAt(e.key)),
+                  onQtyChanged: (q) => setState(() => _lines[e.key] = e.value.withQty(q)),
+                  onPriceChanged: (p) => setState(() => _lines[e.key] = e.value.withUnitPrice(p)),
+                )),
             const Divider(),
             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
               Text('Total', style: Theme.of(context).textTheme.titleMedium),
               Text(formatCurrency(_total),
                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
             ]),
+            if (creditExceeded && creditOverrideEnabled) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade50,
+                  border: Border.all(color: Colors.amber.shade700),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.warning_amber_rounded,
+                        color: Colors.amber.shade800, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Order total ${formatCurrency(_total)} exceeds '
+                        '${_selectedRetailer!.name}\'s available credit '
+                        '(${formatCurrency(_selectedRetailer!.availableCredit)}). '
+                        'Credit override is enabled — order will still be placed.',
+                        style: TextStyle(
+                            color: Colors.amber.shade900, fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
-
           const SizedBox(height: 16),
+
+          // ── Notes ─────────────────────────────────────────────────────────
           TextField(
             controller: _notesCtrl,
-            decoration: const InputDecoration(labelText: 'Notes (optional)'),
+            decoration: const InputDecoration(
+              labelText: 'Notes (optional)',
+              border: OutlineInputBorder(),
+            ),
             maxLines: 2,
           ),
+          const SizedBox(height: 12),
+
+          // ── Override company (collapsed — rarely used) ─────────────────────
+          if (canOverride)
+            ref.watch(_orderCompaniesProvider).maybeWhen(
+              data: (companies) => Theme(
+                data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                child: ExpansionTile(
+                  tilePadding: EdgeInsets.zero,
+                  title: Text('Override Fulfilling Company',
+                      style: Theme.of(context).textTheme.bodyMedium),
+                  subtitle: _overrideCompanyId != null
+                      ? Text(
+                          companies.firstWhere((c) => c.id == _overrideCompanyId).name,
+                          style: TextStyle(color: Theme.of(context).colorScheme.primary),
+                        )
+                      : const Text('Per product (default)'),
+                  children: [
+                    DropdownButtonFormField<String>(
+                      key: ValueKey('override-${companies.length}-$_overrideCompanyId'),
+                      decoration: const InputDecoration(
+                        labelText: 'Company',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      initialValue: companies.any((c) => c.id == _overrideCompanyId)
+                          ? _overrideCompanyId
+                          : null,
+                      items: [
+                        const DropdownMenuItem(
+                            value: null, child: Text('— Per product (default) —')),
+                        ...companies.map(
+                            (c) => DropdownMenuItem(value: c.id, child: Text(c.name))),
+                      ],
+                      onChanged: (v) => setState(() => _overrideCompanyId = v),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                ),
+              ),
+              orElse: () => const SizedBox.shrink(),
+            ),
 
           if (_error != null) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
           ],
 
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
           FilledButton(
             onPressed: (_submitting || _selectedRetailer == null || _lines.isEmpty)
                 ? null
                 : _submit,
             child: _submitting
                 ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Text('Place Order'),
+                : Text(_lines.isEmpty
+                    ? 'Place Order'
+                    : 'Place Order  •  ${formatCurrency(_total)}'),
           ),
         ],
       ),
@@ -356,7 +431,7 @@ class _OrderLine {
   _OrderLine withUnitPrice(double p) => _OrderLine(product: product, qty: qty, unitPrice: p);
 }
 
-class _OrderLineTile extends StatelessWidget {
+class _OrderLineTile extends StatefulWidget {
   const _OrderLineTile({
     required this.line,
     required this.onRemove,
@@ -370,72 +445,129 @@ class _OrderLineTile extends StatelessWidget {
   final bool canEditPrice;
   final void Function(double) onPriceChanged;
 
-  void _showPriceDialog(BuildContext context) {
-    final ctrl = TextEditingController(text: line.unitPrice.toStringAsFixed(2));
-    showDialog(
-      context: context,
-      builder: (dialogCtx) => AlertDialog(
-        title: Text('Set price — ${line.product.name}'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(labelText: 'Unit price (₹)', prefixText: '₹ '),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogCtx), child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () {
-              final p = double.tryParse(ctrl.text);
-              if (p != null && p > 0) {
-                onPriceChanged(p);
-                Navigator.pop(dialogCtx);
-              }
-            },
-            child: const Text('Apply'),
-          ),
-        ],
-      ),
-    );
+  @override
+  State<_OrderLineTile> createState() => _OrderLineTileState();
+}
+
+class _OrderLineTileState extends State<_OrderLineTile> {
+  late final TextEditingController _qtyCtrl;
+  late final TextEditingController _priceCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _qtyCtrl = TextEditingController(text: widget.line.qty.toString());
+    _priceCtrl = TextEditingController(text: widget.line.unitPrice.toStringAsFixed(2));
+  }
+
+  @override
+  void didUpdateWidget(_OrderLineTile old) {
+    super.didUpdateWidget(old);
+    if (old.line.qty != widget.line.qty &&
+        int.tryParse(_qtyCtrl.text) != widget.line.qty) {
+      _qtyCtrl.text = widget.line.qty.toString();
+    }
+    if (old.line.unitPrice != widget.line.unitPrice &&
+        double.tryParse(_priceCtrl.text) != widget.line.unitPrice) {
+      _priceCtrl.text = widget.line.unitPrice.toStringAsFixed(2);
+    }
+  }
+
+  @override
+  void dispose() {
+    _qtyCtrl.dispose();
+    _priceCtrl.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final priceOverridden = line.unitPrice != line.product.price;
-    return ListTile(
-      title: Text(line.product.name),
-      subtitle: Row(mainAxisSize: MainAxisSize.min, children: [
-        Text(
-          formatCurrency(line.unitPrice),
-          style: priceOverridden
-              ? TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w600)
-              : null,
-        ),
-        if (priceOverridden) ...[
-          const SizedBox(width: 4),
-          Text(
-            formatCurrency(line.product.price),
-            style: TextStyle(
-              fontSize: 11,
-              decoration: TextDecoration.lineThrough,
-              color: Theme.of(context).colorScheme.outline,
+    final priceOverridden = widget.line.unitPrice != widget.line.product.price;
+
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 4, 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(widget.line.product.name,
+                      style: Theme.of(context).textTheme.bodyMedium),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      // ── Quantity ──────────────────────────────────────
+                      Expanded(
+                        flex: 2,
+                        child: TextField(
+                          controller: _qtyCtrl,
+                          keyboardType: TextInputType.number,
+                          textAlign: TextAlign.center,
+                          decoration: const InputDecoration(
+                            labelText: 'Qty',
+                            isDense: true,
+                            border: OutlineInputBorder(),
+                          ),
+                          onChanged: (v) {
+                            final q = int.tryParse(v);
+                            if (q != null && q > 0) widget.onQtyChanged(q);
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      // ── Price ─────────────────────────────────────────
+                      if (widget.canEditPrice)
+                        Expanded(
+                          flex: 3,
+                          child: TextField(
+                            controller: _priceCtrl,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            textAlign: TextAlign.center,
+                            style: priceOverridden
+                                ? TextStyle(
+                                    color: Theme.of(context).colorScheme.primary,
+                                    fontWeight: FontWeight.w600)
+                                : null,
+                            decoration: InputDecoration(
+                              labelText: 'Price (₹)',
+                              isDense: true,
+                              border: const OutlineInputBorder(),
+                              suffixIcon: priceOverridden
+                                  ? Tooltip(
+                                      message:
+                                          'Original: ${formatCurrency(widget.line.product.price)}',
+                                      child: Icon(Icons.info_outline,
+                                          size: 16,
+                                          color: Theme.of(context).colorScheme.primary),
+                                    )
+                                  : null,
+                            ),
+                            onChanged: (v) {
+                              final p = double.tryParse(v);
+                              if (p != null && p > 0) widget.onPriceChanged(p);
+                            },
+                          ),
+                        )
+                      else
+                        Text(formatCurrency(widget.line.unitPrice),
+                            style: Theme.of(context).textTheme.bodyMedium),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
-        if (canEditPrice) ...[
-          const SizedBox(width: 4),
-          InkWell(
-            onTap: () => _showPriceDialog(context),
-            child: Icon(Icons.edit, size: 14, color: Theme.of(context).colorScheme.primary),
-          ),
-        ],
-      ]),
-      trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-        IconButton(icon: const Icon(Icons.remove), onPressed: line.qty > 1 ? () => onQtyChanged(line.qty - 1) : null),
-        Text(formatNumber(line.qty)),
-        IconButton(icon: const Icon(Icons.add), onPressed: () => onQtyChanged(line.qty + 1)),
-        IconButton(icon: const Icon(Icons.close), onPressed: onRemove),
-      ]),
+            IconButton(
+              icon: const Icon(Icons.close),
+              onPressed: widget.onRemove,
+              visualDensity: VisualDensity.compact,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -16,7 +16,12 @@ export async function getMyStats(req: Request, res: Response, next: NextFunction
 
 export async function getStockAlerts(req: Request, res: Response, next: NextFunction) {
   try {
-    const threshold = req.query.threshold ? Number(req.query.threshold) : 10;
-    sendSuccess(res, await analyticsService.getStockAlerts(threshold));
+    sendSuccess(res, await analyticsService.getStockAlerts());
+  } catch (err) { next(err); }
+}
+
+export async function getGodownStats(req: Request, res: Response, next: NextFunction) {
+  try {
+    sendSuccess(res, await analyticsService.getGodownStats());
   } catch (err) { next(err); }
 }

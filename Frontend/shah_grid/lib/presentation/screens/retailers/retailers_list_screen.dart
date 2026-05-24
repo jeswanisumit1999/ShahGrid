@@ -3,12 +3,45 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../providers/retailers_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../../data/models/retailer_model.dart';
+import '../../../data/repositories/retailers_repository.dart';
 import '../../../core/utils/format_utils.dart';
 import '../../widgets/common/app_error_widget.dart';
+import '../../../core/network/dio_client.dart';
 import '../../widgets/common/pagination_list_view.dart';
 
 class RetailersListScreen extends ConsumerWidget {
   const RetailersListScreen({super.key});
+
+  void _confirmDelete(BuildContext context, WidgetRef ref, RetailerModel retailer, RetailersNotifier notifier) {
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Delete Retailer'),
+        content: Text('Delete "${retailer.name}"? This cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogCtx), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () async {
+              Navigator.pop(dialogCtx);
+              try {
+                await ref.read(retailersRepositoryProvider).deleteRetailer(retailer.id);
+                notifier.load(refresh: true);
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(friendlyError(e)), backgroundColor: Colors.red),
+                  );
+                }
+              }
+            },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -42,7 +75,7 @@ class RetailersListScreen extends ConsumerWidget {
       body: state.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => AppErrorWidget(error: e, onRetry: () => notifier.load(refresh: true)),
-        data: (result) => PaginationListView(
+        data: (result) => PaginationListView<RetailerModel>(
           items: result.items,
           hasMore: result.hasMore,
           onLoadMore: notifier.loadMore,
@@ -51,13 +84,38 @@ class RetailersListScreen extends ConsumerWidget {
             leading: const CircleAvatar(child: Icon(Icons.storefront)),
             title: Text(retailer.name),
             subtitle: Text(retailer.phone),
-            trailing: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.end,
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Text(formatCurrency(retailer.pendingCollection),
-                    style: const TextStyle(fontWeight: FontWeight.w600)),
-                Text('pending', style: Theme.of(ctx).textTheme.labelSmall),
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(formatCurrency(retailer.pendingCollection),
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                    Text('pending', style: Theme.of(ctx).textTheme.labelSmall),
+                  ],
+                ),
+                if (canCreate) ...[
+                  const SizedBox(width: 4),
+                  PopupMenuButton<String>(
+                    icon: const Icon(Icons.more_vert),
+                    onSelected: (v) {
+                      if (v == 'delete') _confirmDelete(ctx, ref, retailer, notifier);
+                    },
+                    itemBuilder: (_) => [
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: const ListTile(
+                          leading: Icon(Icons.delete_outline, color: Colors.red),
+                          title: Text('Delete', style: TextStyle(color: Colors.red)),
+                          contentPadding: EdgeInsets.zero,
+                          dense: true,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
             onTap: () => ctx.go('/retailers/${retailer.id}'),

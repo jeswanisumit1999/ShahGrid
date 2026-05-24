@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../../core/errors/app_exception.dart';
+import '../../../core/network/dio_client.dart';
 
 class AppErrorWidget extends StatelessWidget {
   const AppErrorWidget({super.key, required this.error, this.onRetry});
@@ -9,9 +9,7 @@ class AppErrorWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final msg = error is AppException
-        ? (error as AppException).message
-        : error.toString();
+    final msg = friendlyError(error);
 
     return Center(
       child: Padding(

@@ -7,6 +7,7 @@ import '../../../data/models/user_model.dart';
 import '../../../data/repositories/products_repository.dart';
 import '../../../core/utils/format_utils.dart';
 import '../../widgets/common/app_error_widget.dart';
+import '../../../core/network/dio_client.dart';
 import '../../widgets/common/pagination_list_view.dart';
 
 final productsListProvider = StateNotifierProvider.autoDispose<_ProductsNotifier,
@@ -93,18 +94,57 @@ class ProductsListScreen extends ConsumerWidget {
                 Text(formatNumber(product.stockQuantity),
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
-                      color: product.stockQuantity <= 10
+                      color: product.isLowStock
                           ? Theme.of(ctx).colorScheme.error
                           : null,
                     )),
                 const Text('in stock', style: TextStyle(fontSize: 11)),
               ]),
-              if (canAdjust) ...[
-                const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(Icons.tune),
-                  tooltip: 'Adjust stock',
-                  onPressed: () => _showAdjustDialog(ctx, ref, product),
+              if (canAdjust || canCreate) ...[
+                const SizedBox(width: 4),
+                PopupMenuButton<_ProductAction>(
+                  icon: const Icon(Icons.more_vert),
+                  onSelected: (action) {
+                    if (action == _ProductAction.adjustStock) {
+                      _showAdjustDialog(ctx, ref, product);
+                    } else if (action == _ProductAction.ledger) {
+                      ctx.go('/products/${product.id}/ledger');
+                    } else if (action == _ProductAction.delete) {
+                      _showDeleteDialog(ctx, ref, product);
+                    }
+                  },
+                  itemBuilder: (_) => [
+                    if (canAdjust) ...[
+                      PopupMenuItem(
+                        value: _ProductAction.adjustStock,
+                        child: const ListTile(
+                          leading: Icon(Icons.tune),
+                          title: Text('Adjust Stock'),
+                          contentPadding: EdgeInsets.zero,
+                          dense: true,
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: _ProductAction.ledger,
+                        child: const ListTile(
+                          leading: Icon(Icons.menu_book_outlined),
+                          title: Text('Stock Ledger'),
+                          contentPadding: EdgeInsets.zero,
+                          dense: true,
+                        ),
+                      ),
+                    ],
+                    if (canCreate)
+                      PopupMenuItem(
+                        value: _ProductAction.delete,
+                        child: const ListTile(
+                          leading: Icon(Icons.delete_outline, color: Colors.red),
+                          title: Text('Delete', style: TextStyle(color: Colors.red)),
+                          contentPadding: EdgeInsets.zero,
+                          dense: true,
+                        ),
+                      ),
+                  ],
                 ),
               ],
             ]),
@@ -114,8 +154,39 @@ class ProductsListScreen extends ConsumerWidget {
     );
   }
 
+  void _showDeleteDialog(BuildContext context, WidgetRef ref, ProductModel product) {
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Delete Product'),
+        content: Text('Delete "${product.name}"? This cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogCtx), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () async {
+              Navigator.pop(dialogCtx);
+              try {
+                await ref.read(productsRepositoryProvider).deleteProduct(product.id);
+                ref.read(productsListProvider.notifier).load(refresh: true);
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(friendlyError(e)), backgroundColor: Colors.red),
+                  );
+                }
+              }
+            },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showAdjustDialog(BuildContext context, WidgetRef ref, ProductModel product) {
     final ctrl = TextEditingController();
+
     showDialog(
       context: context,
       builder: (dialogCtx) => AlertDialog(
@@ -138,7 +209,7 @@ class ProductsListScreen extends ConsumerWidget {
               } catch (e) {
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
+                    SnackBar(content: Text(friendlyError(e)), backgroundColor: Colors.red),
                   );
                 }
               }
@@ -150,3 +221,5 @@ class ProductsListScreen extends ConsumerWidget {
     );
   }
 }
+
+enum _ProductAction { adjustStock, ledger, delete }

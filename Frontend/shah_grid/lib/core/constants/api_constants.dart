@@ -1,7 +1,10 @@
 class ApiConstants {
   ApiConstants._();
 
-  static const String baseUrl = 'http://localhost:3000/api/v1';
+  static const String baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'http://localhost:3000/api/v1',
+  );
 
   // Auth
   static const String googleIdToken = '/auth/google/id-token';
@@ -18,15 +21,18 @@ class ApiConstants {
   static String userById(String id) => '/users/$id';
   static const String assignRole = '/users/assign-role';
   static String deactivateUser(String id) => '/users/$id/deactivate';
+  static const String activityLog = '/users/activity-log';
 
   // Retailers
   static const String retailers = '/retailers';
   static String retailerById(String id) => '/retailers/$id';
+  static String retailerLedger(String id) => '/retailers/$id/ledger';
 
   // Products
   static const String products = '/products';
   static String productById(String id) => '/products/$id';
   static String stockAdjust(String id) => '/products/$id/stock-adjust';
+  static String stockLedger(String id) => '/products/$id/ledger';
   static const String brands = '/products/meta/brands';
   static const String companies = '/products/meta/companies';
   static const String categories = '/products/meta/categories';
@@ -38,6 +44,8 @@ class ApiConstants {
   static const String orders = '/orders';
   static String orderById(String id) => '/orders/$id';
   static String orderChallan(String id) => '/orders/$id/challan';
+  static String orderItems(String orderId) => '/orders/$orderId/items';
+  static String orderItemById(String orderId, String itemId) => '/orders/$orderId/items/$itemId';
 
   // Shipments
   static const String shipments = '/shipments';
@@ -61,6 +69,12 @@ class ApiConstants {
   static const String dashboard = '/analytics/dashboard';
   static const String myStats = '/analytics/my-stats';
   static const String stockAlerts = '/analytics/stock-alerts';
+  static const String godownStats = '/analytics/godown-stats';
+
+  // Direct Sales
+  static const String directSales = '/direct-sales';
+  static String directSaleById(String id) => '/direct-sales/$id';
+  static String directSaleChallan(String id) => '/direct-sales/$id/challan';
 
   // Settings
   static const String settings = '/settings';

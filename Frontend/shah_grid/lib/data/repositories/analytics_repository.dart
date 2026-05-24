@@ -23,11 +23,13 @@ class AnalyticsRepository {
     return MyStatsModel.fromJson(unwrap<Map<String, dynamic>>(response));
   }
 
-  Future<List<ProductModel>> getStockAlerts({int threshold = 10}) async {
-    final response = await _dio.get(
-      ApiConstants.stockAlerts,
-      queryParameters: {'threshold': threshold},
-    );
+  Future<GodownStatsModel> getGodownStats() async {
+    final response = await _dio.get(ApiConstants.godownStats);
+    return GodownStatsModel.fromJson(unwrap<Map<String, dynamic>>(response));
+  }
+
+  Future<List<ProductModel>> getStockAlerts() async {
+    final response = await _dio.get(ApiConstants.stockAlerts);
     return (unwrap<List>(response))
         .map((e) => ProductModel.fromJson(e as Map<String, dynamic>))
         .toList();

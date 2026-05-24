@@ -176,3 +176,159 @@ export async function deleteRole(roleId: string, actorId: string) {
     });
   });
 }
+
+export async function listActivityLog(params: {
+  cursor?: string;
+  limit: number;
+  search?: string;
+}) {
+  const { cursor, limit, search } = params;
+
+  // Find actor IDs matching name search
+  let actorIdFilter: string[] | undefined;
+  if (search) {
+    const matchingActors = await prisma.user.findMany({
+      where: { name: { contains: search, mode: 'insensitive' } },
+      select: { id: true },
+    });
+    if (matchingActors.length > 0) {
+      actorIdFilter = matchingActors.map((a) => a.id);
+    }
+  }
+
+  const where: {
+    createdAt?: { lt: Date };
+    OR?: object[];
+  } = cursor ? { createdAt: { lt: new Date(cursor) } } : {};
+
+  if (search) {
+    const orConditions: object[] = [
+      { action: { contains: search, mode: 'insensitive' } },
+      { entityType: { contains: search, mode: 'insensitive' } },
+    ];
+    if (actorIdFilter && actorIdFilter.length > 0) {
+      orConditions.push({ actorId: { in: actorIdFilter } });
+    }
+    where.OR = orConditions;
+  }
+
+  const logs = await prisma.auditLog.findMany({
+    where,
+    take: limit + 1,
+    orderBy: { createdAt: 'desc' },
+  });
+
+  const hasMore = logs.length > limit;
+  if (hasMore) logs.pop();
+
+  // Batch-fetch actor names
+  const actorIds = [...new Set(logs.map((l) => l.actorId))];
+  const actors = actorIds.length > 0
+    ? await prisma.user.findMany({
+        where: { id: { in: actorIds } },
+        select: { id: true, name: true, email: true },
+      })
+    : [];
+  const actorMap = Object.fromEntries(actors.map((a) => [a.id, a]));
+
+  // Batch-fetch entity labels grouped by entityType
+  const byType = new Map<string, string[]>();
+  for (const log of logs) {
+    const arr = byType.get(log.entityType) ?? [];
+    arr.push(log.entityId);
+    byType.set(log.entityType, arr);
+  }
+
+  const entityLabelMap = new Map<string, string>(); // entityId -> human label
+
+  await Promise.all(
+    [...byType.entries()].map(async ([type, rawIds]) => {
+      const ids = [...new Set(rawIds)];
+      switch (type) {
+        case 'Order': {
+          const rows = await prisma.order.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, retailer: { select: { name: true } } },
+          });
+          for (const r of rows) entityLabelMap.set(r.id, r.retailer.name);
+          break;
+        }
+        case 'Payment': {
+          const rows = await prisma.payment.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, retailer: { select: { name: true } } },
+          });
+          for (const r of rows) entityLabelMap.set(r.id, r.retailer.name);
+          break;
+        }
+        case 'User': {
+          const rows = await prisma.user.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, name: true },
+          });
+          for (const r of rows) entityLabelMap.set(r.id, r.name);
+          break;
+        }
+        case 'Role': {
+          const rows = await prisma.role.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, name: true },
+          });
+          for (const r of rows) entityLabelMap.set(r.id, r.name);
+          break;
+        }
+        case 'Retailer': {
+          const rows = await prisma.retailer.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, name: true },
+          });
+          for (const r of rows) entityLabelMap.set(r.id, r.name);
+          break;
+        }
+        case 'Product': {
+          const rows = await prisma.product.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, name: true },
+          });
+          for (const r of rows) entityLabelMap.set(r.id, r.name);
+          break;
+        }
+        case 'Shipment': {
+          const rows = await prisma.shipment.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, order: { select: { retailer: { select: { name: true } } } } },
+          });
+          for (const r of rows) entityLabelMap.set(r.id, r.order.retailer.name);
+          break;
+        }
+      }
+    })
+  );
+
+  const items = logs.map((log) => {
+    // DB lookup first; fall back to diff fields for deleted entities
+    let entityLabel: string | null = entityLabelMap.get(log.entityId) ?? null;
+    if (!entityLabel && log.diff) {
+      const d = log.diff as Record<string, unknown>;
+      entityLabel = (d['name'] ?? d['roleName'] ?? d['userName'] ?? null) as string | null;
+    }
+    return {
+      id: log.id,
+      actorId: log.actorId,
+      actorName: actorMap[log.actorId]?.name ?? 'Unknown',
+      actorEmail: actorMap[log.actorId]?.email ?? '',
+      action: log.action,
+      entityType: log.entityType,
+      entityId: log.entityId,
+      entityLabel,
+      diff: log.diff,
+      createdAt: log.createdAt.toISOString(),
+    };
+  });
+
+  return {
+    items,
+    hasMore,
+    nextCursor: hasMore && items.length > 0 ? items[items.length - 1].createdAt : null,
+  };
+}

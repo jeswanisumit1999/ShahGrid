@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/api_constants.dart';
 import '../../core/network/dio_client.dart';
 import '../models/retailer_model.dart';
+import '../models/retailer_ledger_model.dart';
 import '../models/user_model.dart';
 
 final retailersRepositoryProvider = Provider<RetailersRepository>((ref) {
@@ -49,5 +50,27 @@ class RetailersRepository {
   Future<RetailerModel> update(String id, Map<String, dynamic> data) async {
     final response = await _dio.patch(ApiConstants.retailerById(id), data: data);
     return RetailerModel.fromJson(unwrap<Map<String, dynamic>>(response));
+  }
+
+  Future<void> deleteRetailer(String id) async {
+    await _dio.delete(ApiConstants.retailerById(id));
+  }
+
+  Future<({List<RetailerLedgerEntry> items, bool hasMore, String? nextCursor, Map<String, dynamic> retailer})>
+      getRetailerLedger(String retailerId, {String? cursor, int limit = 20}) async {
+    final response = await _dio.get(ApiConstants.retailerLedger(retailerId), queryParameters: {
+      if (cursor != null) 'cursor': cursor,
+      'limit': limit,
+    });
+    final body = response.data as Map<String, dynamic>;
+    final pagination = body['pagination'] as Map<String, dynamic>? ?? {};
+    return (
+      items: (body['data'] as List)
+          .map((e) => RetailerLedgerEntry.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      hasMore: pagination['hasMore'] as bool? ?? false,
+      nextCursor: pagination['nextCursor'] as String?,
+      retailer: pagination['retailer'] as Map<String, dynamic>? ?? {},
+    );
   }
 }

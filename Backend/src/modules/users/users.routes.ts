@@ -70,6 +70,7 @@ router.post('/roles', requirePermission('roles', 'manage'), validate(createRoleS
 router.patch('/roles/:roleId/permissions', requirePermission('roles', 'manage'), validate(updateRolePermissionsSchema), controller.updateRolePermissions);
 router.delete('/roles/:roleId', requirePermission('roles', 'manage'), controller.deleteRole);
 router.get('/permissions', requirePermission('roles', 'manage'), controller.listPermissions);
+router.get('/activity-log', requirePermission('roles', 'manage'), controller.getActivityLog);
 
 /**
  * @openapi

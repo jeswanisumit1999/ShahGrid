@@ -21,6 +21,7 @@ const PERMISSIONS = [
   { resource: 'products', action: 'manage' },
   { resource: 'retailers', action: 'read' },
   { resource: 'retailers', action: 'manage' },
+  { resource: 'retailers', action: 'credit_limit' },
   { resource: 'payments', action: 'record' },
   { resource: 'payments', action: 'read' },
   { resource: 'analytics', action: 'read' },
@@ -34,13 +35,14 @@ const PERMISSIONS = [
   { resource: 'visits', action: 'read' },
   { resource: 'checkins', action: 'create' },
   { resource: 'checkins', action: 'read' },
+  { resource: 'orders', action: 'direct_sale' },
 ];
 
 const ROLE_PERMISSIONS: Record<string, string[]> = {
   Admin: [
-    'orders.create', 'orders.read', 'orders.manage',
+    'orders.create', 'orders.read', 'orders.manage', 'orders.direct_sale',
     'shipments.manage', 'stock.update', 'products.read', 'products.manage',
-    'retailers.read', 'retailers.manage',
+    'retailers.read', 'retailers.manage', 'retailers.credit_limit',
     'payments.record', 'payments.read',
     'analytics.read', 'roles.manage',
     'users.read', 'users.manage', 'settings.manage',
@@ -52,19 +54,19 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'orders.create', 'orders.read', 'orders.manage',
     'shipments.manage', 'stock.update', 'products.read', 'products.manage',
     'retailers.read', 'retailers.manage',
-    'payments.read', 'challans.generate', 'returns.manage',
+    'payments.record', 'payments.read', 'challans.generate', 'returns.manage',
   ],
   'Sales Officer': [
     'orders.create', 'orders.read',
-    'retailers.read',
+    'retailers.read', 'retailers.manage',
     'products.read',
-    'payments.record', 'payments.read',
+    'payments.read',
     'analytics.read',
     'visits.create', 'visits.read',
     'checkins.create', 'checkins.read',
   ],
   'Godown Manager': [
-    'orders.read', 'shipments.manage', 'stock.update',
+    'orders.read', 'orders.direct_sale', 'shipments.manage', 'stock.update',
     'products.read', 'products.manage', 'retailers.read', 'returns.manage',
   ],
   Pending: [],
@@ -136,11 +138,10 @@ async function main() {
       })
       .filter((x): x is { roleId: string; permissionId: string } => x !== null);
 
+    // Delete then recreate so removed permissions are properly synced
+    await prisma.rolePermission.deleteMany({ where: { roleId: role.id } });
     if (permissionAssignments.length > 0) {
-      await prisma.rolePermission.createMany({
-        data: permissionAssignments,
-        skipDuplicates: true,
-      });
+      await prisma.rolePermission.createMany({ data: permissionAssignments });
     }
 
     console.log(`    ${roleName}: ${permissionAssignments.length} permissions`);

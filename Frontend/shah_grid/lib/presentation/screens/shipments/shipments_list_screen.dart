@@ -59,21 +59,23 @@ class _StatusFilterButton extends StatefulWidget {
 }
 
 class _StatusFilterButtonState extends State<_StatusFilterButton> {
+  static const _all = '';
   String? _selected;
 
   @override
   Widget build(BuildContext context) {
-    return PopupMenuButton<String?>(
+    return PopupMenuButton<String>(
       icon: Badge(
         isLabelVisible: _selected != null,
         child: const Icon(Icons.filter_list),
       ),
       onSelected: (v) {
-        setState(() => _selected = v);
-        widget.onFilter(v);
+        final status = v == _all ? null : v;
+        setState(() => _selected = status);
+        widget.onFilter(status);
       },
       itemBuilder: (_) => [
-        const PopupMenuItem(value: null, child: Text('All statuses')),
+        const PopupMenuItem(value: _all, child: Text('All statuses')),
         ...ShipmentModel.allStatuses.map((s) => PopupMenuItem(value: s, child: Text(s))),
       ],
     );
