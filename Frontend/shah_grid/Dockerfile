@@ -12,7 +12,6 @@ RUN flutter pub get
 COPY . .
 
 RUN flutter build web --release \
-    --web-renderer canvaskit \
     --dart-define=API_BASE_URL=${API_BASE_URL}
 
 # ── Stage 2: Serve with nginx ─────────────────────────────────────────────────
