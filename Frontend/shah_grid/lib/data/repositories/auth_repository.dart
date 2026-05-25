@@ -15,7 +15,8 @@ class AuthRepository {
 
   // clientId for web is read from the <meta name="google-signin-client_id"> tag in index.html.
   // Do NOT set serverClientId here — it switches to the auth-code flow and breaks idToken on web.
-  final _googleSignIn = GoogleSignIn(scopes: ['email', 'profile', 'openid']);
+  // late so GIS initialization is deferred until first use (web never calls signInWithGoogle).
+  late final _googleSignIn = GoogleSignIn(scopes: ['email', 'profile', 'openid']);
 
   /// Signs in with Google and exchanges the ID token with the backend.
   Future<({String accessToken, String refreshToken, UserModel user})>

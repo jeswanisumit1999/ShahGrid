@@ -1,23 +1,9 @@
-# ── Stage 1: Build Flutter Web ────────────────────────────────────────────────
-FROM ghcr.io/cirruslabs/flutter:stable AS builder
+# Pre-built Flutter web output is copied in at build time.
+# Run: flutter build web --release --dart-define=API_BASE_URL=<url>
+# before building this image.
+FROM nginx:alpine
 
-# API base URL injected at build time; default uses same-origin nginx routing
-ARG API_BASE_URL=/api/v1
-
-WORKDIR /app
-
-COPY pubspec.yaml pubspec.lock ./
-RUN flutter pub get
-
-COPY . .
-
-RUN flutter build web --release \
-    --dart-define=API_BASE_URL=${API_BASE_URL}
-
-# ── Stage 2: Serve with nginx ─────────────────────────────────────────────────
-FROM nginx:alpine AS production
-
-COPY --from=builder /app/build/web /usr/share/nginx/html
+COPY build/web /usr/share/nginx/html
 
 # SPA fallback: all routes serve index.html
 RUN printf 'server {\n  listen 80;\n  root /usr/share/nginx/html;\n  index index.html;\n  location / { try_files $uri $uri/ /index.html; }\n}\n' \

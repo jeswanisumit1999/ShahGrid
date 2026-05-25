@@ -4,9 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/auth_provider.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../core/utils/web_redirect.dart';
+import '../../../core/constants/api_constants.dart';
 
-// Backend OAuth entry point — browser lands here, gets redirected to Google.
-const _backendOAuthUrl = 'http://localhost:3000/api/v1/auth/google';
+final _backendOAuthUrl = '${ApiConstants.baseUrl}/auth/google';
 
 class LoginScreen extends ConsumerWidget {
   const LoginScreen({super.key});

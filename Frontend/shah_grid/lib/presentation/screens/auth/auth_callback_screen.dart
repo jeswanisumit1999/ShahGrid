@@ -28,13 +28,17 @@ class _AuthCallbackScreenState extends ConsumerState<AuthCallbackScreen> {
   }
 
   Future<void> _finishLogin() async {
-    await TokenStorage.saveTokens(
-      access: widget.accessToken,
-      refresh: widget.refreshToken,
-    );
-    // Reload auth state from the freshly stored tokens
-    await ref.read(authStateProvider.notifier).reload();
-    if (mounted) context.go('/dashboard');
+    try {
+      await TokenStorage.saveTokens(
+        access: widget.accessToken,
+        refresh: widget.refreshToken,
+      );
+      await ref.read(authStateProvider.notifier).reload();
+      if (mounted) context.go('/dashboard');
+    } catch (_) {
+      await TokenStorage.clearTokens();
+      if (mounted) context.go('/login');
+    }
   }
 
   @override
