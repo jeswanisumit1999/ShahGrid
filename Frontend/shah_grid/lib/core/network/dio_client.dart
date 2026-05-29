@@ -1,6 +1,8 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:web/web.dart' as web;
 import '../constants/api_constants.dart';
 import '../errors/app_exception.dart';
 
@@ -8,15 +10,36 @@ const _storage = FlutterSecureStorage();
 const _accessTokenKey = 'access_token';
 const _refreshTokenKey = 'refresh_token';
 
-/// Persists and retrieves JWT tokens from secure storage.
+/// Persists and retrieves JWT tokens.
+/// On web uses localStorage directly (Web Crypto API requires HTTPS).
+/// On mobile uses flutter_secure_storage.
 class TokenStorage {
-  static Future<String?> getAccessToken() => _storage.read(key: _accessTokenKey);
-  static Future<String?> getRefreshToken() => _storage.read(key: _refreshTokenKey);
+  static Future<String?> getAccessToken() async {
+    if (kIsWeb) return web.window.localStorage.getItem(_accessTokenKey);
+    return _storage.read(key: _accessTokenKey);
+  }
+
+  static Future<String?> getRefreshToken() async {
+    if (kIsWeb) return web.window.localStorage.getItem(_refreshTokenKey);
+    return _storage.read(key: _refreshTokenKey);
+  }
+
   static Future<void> saveTokens({required String access, String? refresh}) async {
+    if (kIsWeb) {
+      web.window.localStorage.setItem(_accessTokenKey, access);
+      if (refresh != null) web.window.localStorage.setItem(_refreshTokenKey, refresh);
+      return;
+    }
     await _storage.write(key: _accessTokenKey, value: access);
     if (refresh != null) await _storage.write(key: _refreshTokenKey, value: refresh);
   }
+
   static Future<void> clearTokens() async {
+    if (kIsWeb) {
+      web.window.localStorage.removeItem(_accessTokenKey);
+      web.window.localStorage.removeItem(_refreshTokenKey);
+      return;
+    }
     await _storage.delete(key: _accessTokenKey);
     await _storage.delete(key: _refreshTokenKey);
   }
