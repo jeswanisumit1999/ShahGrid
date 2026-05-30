@@ -88,15 +88,17 @@ class _AuthInterceptor extends Interceptor {
           return;
         }
 
-        // Exchange refresh token for a new access token
+        // Exchange refresh token for new tokens (rotation: backend issues a new refresh token too)
         final response = await _dio.post(
           ApiConstants.refresh,
           data: {'refreshToken': refreshToken},
           options: Options(headers: {'Authorization': null}),
         );
 
-        final newToken = response.data['data']['accessToken'] as String;
-        await TokenStorage.saveTokens(access: newToken);
+        final data = response.data['data'] as Map<String, dynamic>;
+        final newToken = data['accessToken'] as String;
+        final newRefreshToken = data['refreshToken'] as String?;
+        await TokenStorage.saveTokens(access: newToken, refresh: newRefreshToken);
 
         // Retry the original request with the new token
         final retryOptions = err.requestOptions;

@@ -147,7 +147,10 @@ export async function refreshAccessToken(refreshToken: string) {
     permissions,
   });
 
-  return { accessToken: newAccessToken };
+  // Rotate the refresh token so the expiry window resets on every use
+  const newRefreshToken = signRefreshToken(user.id);
+
+  return { accessToken: newAccessToken, refreshToken: newRefreshToken };
 }
 
 export function getGoogleAuthUrl() {
