@@ -3,7 +3,7 @@ import * as controller from './orders.controller';
 import { authenticate } from '../../middleware/auth.middleware';
 import { requirePermission } from '../../middleware/rbac.middleware';
 import { validate } from '../../middleware/validate.middleware';
-import { createOrderSchema, listOrdersQuerySchema, updateOrderItemSchema, addOrderItemSchema } from './orders.validators';
+import { createOrderSchema, listOrdersQuerySchema, updateOrderItemSchema, addOrderItemSchema, updateOrderSchema } from './orders.validators';
 
 const router = Router();
 
@@ -132,6 +132,7 @@ router.get('/:id', requirePermission('orders', 'read'), controller.getOrder);
  */
 router.post('/', requirePermission('orders', 'create'), validate(createOrderSchema), controller.createOrder);
 
+router.patch('/:id', requirePermission('orders', 'manage'), validate(updateOrderSchema), controller.updateOrder);
 router.post('/:id/items', requirePermission('orders', 'manage'), validate(addOrderItemSchema), controller.addOrderItem);
 router.patch('/:id/items/:itemId', requirePermission('orders', 'manage'), validate(updateOrderItemSchema), controller.updateOrderItem);
 

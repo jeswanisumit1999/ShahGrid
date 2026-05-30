@@ -52,6 +52,10 @@ class OrdersRepository {
     return Uint8List.fromList(response.data!);
   }
 
+  Future<void> updateNotes(String orderId, String? notes) async {
+    await _dio.patch(ApiConstants.orderById(orderId), data: {'notes': notes});
+  }
+
   Future<void> updateItemQuantity({
     required String orderId,
     required String itemId,

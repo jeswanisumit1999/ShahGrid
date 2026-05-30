@@ -10,6 +10,7 @@ import '../presentation/screens/retailers/retailer_detail_screen.dart';
 import '../presentation/screens/orders/orders_list_screen.dart';
 import '../presentation/screens/orders/order_detail_screen.dart';
 import '../presentation/screens/orders/create_order_screen.dart';
+import '../data/models/create_order_args.dart';
 import '../presentation/screens/products/products_list_screen.dart';
 import '../presentation/screens/products/create_product_screen.dart';
 import '../presentation/screens/products/stock_ledger_screen.dart';
@@ -81,7 +82,12 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/orders',
             builder: (_, __) => const OrdersListScreen(),
             routes: [
-              GoRoute(path: 'new', builder: (_, __) => const CreateOrderScreen()),
+              GoRoute(
+                path: 'new',
+                builder: (_, s) => CreateOrderScreen(
+                  args: s.extra is CreateOrderArgs ? s.extra as CreateOrderArgs : null,
+                ),
+              ),
               GoRoute(
                 path: ':id',
                 builder: (_, s) => OrderDetailScreen(id: s.pathParameters['id']!),

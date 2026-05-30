@@ -11,6 +11,8 @@ import '../../../data/repositories/retailers_repository.dart';
 import '../../../data/repositories/settings_repository.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../core/utils/format_utils.dart';
+import '../../../data/models/create_order_args.dart';
+import '../../widgets/common/retailer_search_dialog.dart';
 
 final _orderCompaniesProvider =
     FutureProvider.autoDispose<List<CompanySummary>>(
@@ -22,7 +24,8 @@ final _creditOverrideEnabledProvider = FutureProvider.autoDispose<bool>((ref) as
 });
 
 class CreateOrderScreen extends ConsumerStatefulWidget {
-  const CreateOrderScreen({super.key});
+  const CreateOrderScreen({super.key, this.args});
+  final CreateOrderArgs? args;
 
   @override
   ConsumerState<CreateOrderScreen> createState() => _CreateOrderScreenState();
@@ -35,6 +38,18 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
   final _notesCtrl = TextEditingController();
   bool _submitting = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final args = widget.args;
+    if (args != null) {
+      _selectedRetailer = args.retailer;
+      _lines.addAll(args.reorderItems.map(
+        (r) => _OrderLine(product: r.product, qty: r.qty, unitPrice: r.unitPrice),
+      ));
+    }
+  }
 
   @override
   void dispose() {
@@ -296,23 +311,20 @@ class _RetailerPickerTile extends ConsumerWidget {
         subtitle: selected != null ? Text('Available: ${formatCurrency(selected!.availableCredit)}') : null,
         trailing: const Icon(Icons.chevron_right),
         onTap: () async {
-          final retailers = await ref.read(retailersRepositoryProvider).list(limit: 50);
-          if (!context.mounted) return;
-          final pick = await showDialog<RetailerModel>(
-            context: context,
-            builder: (dialogCtx) => SimpleDialog(
-              title: const Text('Select Retailer'),
-              children: retailers.items.map((r) => SimpleDialogOption(
-                onPressed: () => Navigator.pop(dialogCtx, r),
-                child: ListTile(
-                  title: Text(r.name),
-                  subtitle: Text('Credit: ${formatCurrency(r.availableCredit)}'),
-                  dense: true,
-                ),
-              )).toList(),
-            ),
-          );
-          if (pick != null) onSelected(pick);
+          try {
+            final retailers = await ref.read(retailersRepositoryProvider).list(limit: 200);
+            if (!context.mounted) return;
+            final pick = await showDialog<RetailerModel>(
+              context: context,
+              builder: (_) => RetailerSearchDialog(retailers: retailers.items),
+            );
+            if (pick != null) onSelected(pick);
+          } catch (e) {
+            if (!context.mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(friendlyError(e)), backgroundColor: Colors.red),
+            );
+          }
         },
       ),
     );

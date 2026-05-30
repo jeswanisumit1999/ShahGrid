@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../providers/retailers_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../../data/models/retailer_model.dart';
@@ -60,6 +61,19 @@ class RetailersListScreen extends ConsumerWidget {
           : null,
       appBar: AppBar(
         title: const Text('Retailers'),
+        actions: [
+          PopupMenuButton<RetailerSort>(
+            icon: const Icon(Icons.sort),
+            tooltip: 'Sort',
+            onSelected: notifier.sortBy,
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: RetailerSort.nameAsc, child: Text('Name A→Z')),
+              PopupMenuItem(value: RetailerSort.nameDesc, child: Text('Name Z→A')),
+              PopupMenuItem(value: RetailerSort.pendingDesc, child: Text('Pending ↑ High')),
+              PopupMenuItem(value: RetailerSort.pendingAsc, child: Text('Pending ↓ Low')),
+            ],
+          ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(56),
           child: Padding(
@@ -80,6 +94,14 @@ class RetailersListScreen extends ConsumerWidget {
           hasMore: result.hasMore,
           onLoadMore: notifier.loadMore,
           onRefresh: () => notifier.load(refresh: true),
+          emptyWidget: const Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.storefront_outlined, size: 48),
+              SizedBox(height: 12),
+              Text('No retailers found'),
+            ],
+          ),
           itemBuilder: (ctx, retailer) => ListTile(
             leading: const CircleAvatar(child: Icon(Icons.storefront)),
             title: Text(retailer.name),
@@ -96,8 +118,15 @@ class RetailersListScreen extends ConsumerWidget {
                     Text('pending', style: Theme.of(ctx).textTheme.labelSmall),
                   ],
                 ),
+                const SizedBox(width: 4),
+                IconButton(
+                  icon: const Icon(Icons.call_outlined, size: 20),
+                  tooltip: 'Call',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () =>
+                      launchUrl(Uri(scheme: 'tel', path: retailer.phone)),
+                ),
                 if (canCreate) ...[
-                  const SizedBox(width: 4),
                   PopupMenuButton<String>(
                     icon: const Icon(Icons.more_vert),
                     onSelected: (v) {

@@ -10,6 +10,7 @@ import '../../../core/network/dio_client.dart';
 import '../../../core/utils/format_utils.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/common/app_error_widget.dart';
+import '../../widgets/common/retailer_search_dialog.dart';
 import '../../widgets/common/pagination_list_view.dart';
 
 final _paymentsProvider = StateNotifierProvider.autoDispose<_PaymentsNotifier,
@@ -55,6 +56,7 @@ class PaymentsScreen extends ConsumerStatefulWidget {
 class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
   final _searchCtrl = TextEditingController();
   Timer? _debounce;
+  String? _methodFilter;
 
   @override
   void initState() {
@@ -128,33 +130,83 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
               ),
             ),
           ),
+          // Method filter chips
+          SizedBox(
+            height: 40,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              children: [
+                for (final method in ['All', ...PaymentModel.methods])
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: FilterChip(
+                      label: Text(method == 'All' ? 'All' : method.toUpperCase()),
+                      selected: method == 'All' ? _methodFilter == null : _methodFilter == method,
+                      onSelected: (_) => setState(() {
+                        _methodFilter = method == 'All' ? null : method;
+                      }),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
           Expanded(
             child: state.when(
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) =>
                   AppErrorWidget(error: e, onRetry: () => notifier.load(refresh: true)),
-              data: (result) => PaginationListView(
-                items: result.items,
-                hasMore: result.hasMore,
-                onLoadMore: notifier.loadMore,
-                onRefresh: () => notifier.load(refresh: true),
-                itemBuilder: (ctx, payment) {
-                  final extraLines = [
-                    if (payment.companyName != null) payment.companyName!,
-                    if (payment.referenceNo != null) 'Ref: ${payment.referenceNo}',
-                  ];
-                  final subtitle = '${payment.method.toUpperCase()}  •  ${formatDate(payment.paymentDate)}'
-                      '${extraLines.isNotEmpty ? '\n${extraLines.join('  •  ')}' : ''}';
-                  return ListTile(
-                    leading: const CircleAvatar(child: Icon(Icons.payments)),
-                    title: Text(payment.retailerName ?? payment.retailerId),
-                    subtitle: Text(subtitle),
-                    isThreeLine: extraLines.isNotEmpty,
-                    trailing: Text(formatCurrency(payment.amount),
-                        style: const TextStyle(fontWeight: FontWeight.bold)),
-                  );
-                },
-              ),
+              data: (result) {
+                final visible = _methodFilter == null
+                    ? result.items
+                    : result.items.where((p) => p.method == _methodFilter).toList();
+                final total = visible.fold(0.0, (sum, p) => sum + p.amount);
+                return Column(
+                  children: [
+                    // Summary bar
+                    Container(
+                      width: double.infinity,
+                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('${visible.length} payment${visible.length == 1 ? '' : 's'}',
+                              style: Theme.of(context).textTheme.bodySmall),
+                          Text(formatCurrency(total),
+                              style: const TextStyle(fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: PaginationListView(
+                        items: visible,
+                        hasMore: _methodFilter == null ? result.hasMore : false,
+                        onLoadMore: notifier.loadMore,
+                        onRefresh: () => notifier.load(refresh: true),
+                        itemBuilder: (ctx, payment) {
+                          final extraLines = [
+                            if (payment.companyName != null) payment.companyName!,
+                            if (payment.referenceNo != null) 'Ref: ${payment.referenceNo}',
+                          ];
+                          final subtitle =
+                              '${payment.method.toUpperCase()}  •  ${formatDate(payment.paymentDate)}'
+                              '${extraLines.isNotEmpty ? '\n${extraLines.join('  •  ')}' : ''}';
+                          return ListTile(
+                            leading: const CircleAvatar(child: Icon(Icons.payments)),
+                            title: Text(payment.retailerName ?? payment.retailerId),
+                            subtitle: Text(subtitle),
+                            isThreeLine: extraLines.isNotEmpty,
+                            trailing: Text(formatCurrency(payment.amount),
+                                style: const TextStyle(fontWeight: FontWeight.bold)),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
         ],
@@ -190,26 +242,21 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
   }
 
   Future<void> _pickRetailer() async {
-    final result = await ref.read(retailersRepositoryProvider).list(limit: 100);
-    if (!mounted) return;
-    final picked = await showDialog<RetailerModel>(
-      context: context,
-      useRootNavigator: true,
-      builder: (dialogCtx) => SimpleDialog(
-        title: const Text('Select Retailer'),
-        children: result.items.map((r) => SimpleDialogOption(
-          onPressed: () => Navigator.pop(dialogCtx, r),
-          child: ListTile(
-            title: Text(r.name),
-            subtitle: Text(
-              'Pending: ${formatCurrency(r.pendingCollection)}  •  Available: ${formatCurrency(r.availableCredit)}',
-            ),
-            dense: true,
-          ),
-        )).toList(),
-      ),
-    );
-    if (picked != null) setState(() { _selectedRetailer = picked; _selectedCompany = null; });
+    try {
+      final result = await ref.read(retailersRepositoryProvider).list(limit: 200);
+      if (!mounted) return;
+      final picked = await showDialog<RetailerModel>(
+        context: context,
+        useRootNavigator: true,
+        builder: (_) => RetailerSearchDialog(retailers: result.items),
+      );
+      if (picked != null) setState(() { _selectedRetailer = picked; _selectedCompany = null; });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyError(e)), backgroundColor: Colors.red),
+      );
+    }
   }
 
   Future<void> _pickCompany() async {

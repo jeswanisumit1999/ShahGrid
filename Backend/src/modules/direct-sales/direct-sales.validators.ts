@@ -20,4 +20,5 @@ export const listDirectSalesQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   salesOfficerId: z.string().uuid().optional(),
+  search: z.string().max(100).optional(),
 });

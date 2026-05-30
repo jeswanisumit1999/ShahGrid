@@ -594,6 +594,12 @@ export async function listOrders(params: {
   return buildPaginationResult(orders, params.limit);
 }
 
+export async function updateOrderNotes(id: string, notes: string | null | undefined) {
+  const order = await prisma.order.findUnique({ where: { id } });
+  if (!order) throw AppError.notFound('Order');
+  return prisma.order.update({ where: { id }, data: { notes: notes ?? null } });
+}
+
 export async function getOrderById(id: string) {
   const order = await prisma.order.findUnique({
     where: { id },

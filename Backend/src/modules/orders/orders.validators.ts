@@ -29,6 +29,10 @@ export const addOrderItemSchema = z.object({
   unitPrice: z.number().positive(),
 });
 
+export const updateOrderSchema = z.object({
+  notes: z.string().max(1024).optional().nullable(),
+});
+
 export const listOrdersQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),

@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../providers/orders_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../../data/repositories/orders_repository.dart';
 import '../../../data/repositories/products_repository.dart';
+import '../../../data/repositories/retailers_repository.dart';
 import '../../../core/utils/format_utils.dart';
 import '../../../core/utils/pdf_preview.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../data/models/order_model.dart';
 import '../../../data/models/product_model.dart';
+import '../../../data/models/create_order_args.dart';
 import '../../widgets/common/app_error_widget.dart';
 import '../../widgets/common/status_badge.dart';
 
@@ -17,12 +20,59 @@ class OrderDetailScreen extends ConsumerWidget {
   const OrderDetailScreen({super.key, required this.id});
   final String id;
 
+  Future<void> _reorder(BuildContext context, WidgetRef ref, OrderModel order) async {
+    try {
+      final retailer = await ref.read(retailersRepositoryProvider).getById(order.retailerId);
+      final items = order.orderItems
+          .where((i) => i.product != null)
+          .map((i) => ReorderItem(product: i.product!, qty: i.quantity, unitPrice: i.unitPrice))
+          .toList();
+      if (context.mounted) {
+        context.go('/orders/new', extra: CreateOrderArgs(retailer: retailer, reorderItems: items));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(friendlyError(e)), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(orderDetailProvider(id));
+    final user = ref.watch(authStateProvider).valueOrNull;
+    final canCreate = user?.hasPermission('orders', 'create') ?? false;
+    final order = async.valueOrNull;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Order Detail')),
+      appBar: AppBar(
+        title: const Text('Order Detail'),
+        actions: [
+          if (order != null) ...[
+            IconButton(
+              icon: const Icon(Icons.copy_outlined),
+              tooltip: 'Copy order ID',
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: order.id));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Order ID copied'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              },
+            ),
+            if (canCreate)
+              IconButton(
+                icon: const Icon(Icons.replay_outlined),
+                tooltip: 'Reorder',
+                onPressed: () => _reorder(context, ref, order),
+              ),
+          ],
+        ],
+      ),
       body: async.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => AppErrorWidget(error: e),
@@ -42,6 +92,47 @@ class _OrderBody extends ConsumerStatefulWidget {
 
 class _OrderBodyState extends ConsumerState<_OrderBody> {
   bool _generatingChallan = false;
+
+  Future<void> _editNotes() async {
+    final ctrl = TextEditingController(text: widget.order.notes ?? '');
+    final result = await showDialog<String?>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Edit Notes'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          maxLines: 4,
+          decoration: const InputDecoration(
+            hintText: 'Add a note…',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogCtx), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogCtx, ctrl.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (result == null) return;
+    try {
+      await ref.read(ordersRepositoryProvider).updateNotes(
+            widget.order.id,
+            result.isEmpty ? null : result,
+          );
+      ref.invalidate(orderDetailProvider(widget.order.id));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(friendlyError(e)), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
 
   Future<void> _generateChallan() async {
     setState(() => _generatingChallan = true);
@@ -127,11 +218,13 @@ class _OrderBodyState extends ConsumerState<_OrderBody> {
   Widget build(BuildContext context) {
     final user = ref.watch(authStateProvider).valueOrNull;
     final canGenerateChallan = user?.hasPermission('challans', 'generate') ?? false;
-    final canEditItems = !widget.order.isDirectSale &&
-        (user?.hasPermission('orders', 'manage') ?? false);
+    final canManage = user?.hasPermission('orders', 'manage') ?? false;
+    final canEditItems = !widget.order.isDirectSale && canManage;
     final order = widget.order;
 
-    return ListView(
+    return RefreshIndicator(
+      onRefresh: () async => ref.invalidate(orderDetailProvider(widget.order.id)),
+      child: ListView(
       padding: const EdgeInsets.all(16),
       children: [
         // Summary card
@@ -238,12 +331,31 @@ class _OrderBodyState extends ConsumerState<_OrderBody> {
           }),
         ],
 
-        if (order.notes != null && order.notes!.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          Text('Notes', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 4),
-          Text(order.notes!),
-        ],
+        const SizedBox(height: 16),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('Notes', style: Theme.of(context).textTheme.titleMedium),
+            if (canManage)
+              IconButton(
+                icon: const Icon(Icons.edit_outlined, size: 18),
+                tooltip: 'Edit notes',
+                visualDensity: VisualDensity.compact,
+                onPressed: _editNotes,
+              ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          order.notes != null && order.notes!.isNotEmpty
+              ? order.notes!
+              : 'No notes',
+          style: order.notes == null || order.notes!.isEmpty
+              ? Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.outline,
+                  )
+              : null,
+        ),
 
         // Challan
         if (canGenerateChallan) ...[
@@ -260,7 +372,8 @@ class _OrderBodyState extends ConsumerState<_OrderBody> {
           ),
         ],
       ],
-    );
+    ), // ListView
+    ); // RefreshIndicator
   }
 }
 

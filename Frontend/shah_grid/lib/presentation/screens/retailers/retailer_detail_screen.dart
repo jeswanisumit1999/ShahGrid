@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/retailers_provider.dart';
 import '../../../data/repositories/retailers_repository.dart';
@@ -23,11 +24,50 @@ class RetailerDetailScreen extends ConsumerWidget {
     final canEditCreditLimit = authUser?.hasPermission('retailers', 'credit_limit') ?? false;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Retailer')),
+      appBar: AppBar(
+        title: const Text('Retailer'),
+        actions: [
+          if (canManage)
+            async.whenOrNull(
+              data: (retailer) => PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert),
+                onSelected: (v) {
+                  if (v == 'edit') _editInfo(context, ref, retailer);
+                  if (v == 'toggle') _toggleActive(context, ref, retailer);
+                },
+                itemBuilder: (_) => [
+                  const PopupMenuItem(
+                    value: 'edit',
+                    child: ListTile(
+                      leading: Icon(Icons.edit_outlined),
+                      title: Text('Edit Info'),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'toggle',
+                    child: ListTile(
+                      leading: Icon(
+                        retailer.isActive ? Icons.block : Icons.check_circle_outline,
+                        color: retailer.isActive ? Colors.orange : Colors.green,
+                      ),
+                      title: Text(retailer.isActive ? 'Deactivate' : 'Activate'),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                    ),
+                  ),
+                ],
+              ),
+            ) ?? const SizedBox.shrink(),
+        ],
+      ),
       body: async.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => AppErrorWidget(error: e),
-        data: (retailer) => ListView(
+        data: (retailer) => RefreshIndicator(
+          onRefresh: () async => ref.invalidate(retailerDetailProvider(id)),
+          child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
             Card(
@@ -39,7 +79,21 @@ class RetailerDetailScreen extends ConsumerWidget {
                   children: [
                     Text(retailer.name, style: Theme.of(context).textTheme.headlineSmall),
                     const SizedBox(height: 4),
-                    Text(retailer.phone, style: Theme.of(context).textTheme.bodyMedium),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(retailer.phone,
+                              style: Theme.of(context).textTheme.bodyMedium),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.call_outlined),
+                          tooltip: 'Call',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () =>
+                              launchUrl(Uri(scheme: 'tel', path: retailer.phone)),
+                        ),
+                      ],
+                    ),
                     if (retailer.address != null) ...[
                       const SizedBox(height: 4),
                       Text(retailer.address!),
@@ -148,7 +202,8 @@ class RetailerDetailScreen extends ConsumerWidget {
               label: const Text('Payment Ledger'),
             ),
           ],
-        ),
+        ), // ListView
+        ), // RefreshIndicator
       ),
     );
   }
@@ -165,6 +220,53 @@ class RetailerDetailScreen extends ConsumerWidget {
         retailerId: id,
         currentOfficerIds: retailer.salesOfficers.map((o) => o.id).toSet(),
         onSaved: () => ref.invalidate(retailerDetailProvider(id)),
+      ),
+    );
+  }
+
+  void _toggleActive(BuildContext context, WidgetRef ref, RetailerModel retailer) {
+    final action = retailer.isActive ? 'Deactivate' : 'Activate';
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: Text('$action Retailer'),
+        content: Text('$action "${retailer.name}"?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogCtx), child: const Text('Cancel')),
+          FilledButton(
+            style: retailer.isActive
+                ? FilledButton.styleFrom(backgroundColor: Colors.orange)
+                : null,
+            onPressed: () async {
+              Navigator.pop(dialogCtx);
+              try {
+                await ref.read(retailersRepositoryProvider).update(id, {'isActive': !retailer.isActive});
+                ref.invalidate(retailerDetailProvider(id));
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(friendlyError(e)), backgroundColor: Colors.red),
+                  );
+                }
+              }
+            },
+            child: Text(action),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _editInfo(BuildContext context, WidgetRef ref, RetailerModel retailer) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      useRootNavigator: true,
+      builder: (_) => _EditRetailerSheet(
+        retailer: retailer,
+        onSaved: () => ref.invalidate(retailerDetailProvider(id)),
+        repo: ref.read(retailersRepositoryProvider),
       ),
     );
   }
@@ -353,6 +455,119 @@ class _AssignOfficersSheetState extends State<_AssignOfficersSheet> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _EditRetailerSheet extends StatefulWidget {
+  const _EditRetailerSheet({
+    required this.retailer,
+    required this.onSaved,
+    required this.repo,
+  });
+  final RetailerModel retailer;
+  final VoidCallback onSaved;
+  final RetailersRepository repo;
+
+  @override
+  State<_EditRetailerSheet> createState() => _EditRetailerSheetState();
+}
+
+class _EditRetailerSheetState extends State<_EditRetailerSheet> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _name;
+  late final TextEditingController _phone;
+  late final TextEditingController _address;
+  late final TextEditingController _gstin;
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _name = TextEditingController(text: widget.retailer.name);
+    _phone = TextEditingController(text: widget.retailer.phone);
+    _address = TextEditingController(text: widget.retailer.address ?? '');
+    _gstin = TextEditingController(text: widget.retailer.gstin ?? '');
+  }
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _phone.dispose();
+    _address.dispose();
+    _gstin.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    setState(() { _saving = true; _error = null; });
+    try {
+      await widget.repo.update(widget.retailer.id, {
+        'name': _name.text.trim(),
+        'phone': _phone.text.trim(),
+        if (_address.text.trim().isNotEmpty) 'address': _address.text.trim(),
+        if (_gstin.text.trim().isNotEmpty) 'gstin': _gstin.text.trim().toUpperCase(),
+      });
+      widget.onSaved();
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      setState(() { _error = friendlyError(e); _saving = false; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.viewInsetsOf(context).bottom + 16),
+      child: Form(
+        key: _formKey,
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Text('Edit Retailer', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _name,
+            decoration: const InputDecoration(labelText: 'Name *', border: OutlineInputBorder()),
+            validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _phone,
+            decoration: const InputDecoration(labelText: 'Phone *', border: OutlineInputBorder()),
+            keyboardType: TextInputType.phone,
+            validator: (v) => (v == null || v.trim().length < 7) ? 'Enter valid phone' : null,
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _address,
+            decoration: const InputDecoration(labelText: 'Address', border: OutlineInputBorder()),
+            maxLines: 2,
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _gstin,
+            decoration: const InputDecoration(labelText: 'GSTIN', border: OutlineInputBorder()),
+            textCapitalization: TextCapitalization.characters,
+            validator: (v) {
+              if (v == null || v.trim().isEmpty) return null;
+              if (v.trim().length != 15) return 'GSTIN must be 15 characters';
+              return null;
+            },
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          ],
+          const SizedBox(height: 20),
+          FilledButton(
+            onPressed: _saving ? null : _save,
+            child: _saving
+                ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Text('Save Changes'),
+          ),
+        ]),
       ),
     );
   }

@@ -14,6 +14,7 @@ class ProfileScreen extends ConsumerWidget {
     final textTheme = Theme.of(context).textTheme;
 
     return Scaffold(
+      appBar: AppBar(title: Text(user.name)),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -27,16 +28,25 @@ class ProfileScreen extends ConsumerWidget {
                   CircleAvatar(
                     radius: 40,
                     backgroundColor: colorScheme.primaryContainer,
-                    backgroundImage:
-                        user.avatarUrl != null ? NetworkImage(user.avatarUrl!) : null,
-                    child: user.avatarUrl == null
-                        ? Text(
-                            user.name.isNotEmpty ? user.name[0].toUpperCase() : '?',
-                            style: textTheme.headlineMedium?.copyWith(
-                              color: colorScheme.onPrimaryContainer,
+                    child: user.avatarUrl != null
+                        ? ClipOval(
+                            child: Image.network(
+                              user.avatarUrl!,
+                              width: 80,
+                              height: 80,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Icon(
+                                Icons.person,
+                                size: 40,
+                                color: colorScheme.onPrimaryContainer,
+                              ),
                             ),
                           )
-                        : null,
+                        : Icon(
+                            Icons.person,
+                            size: 40,
+                            color: colorScheme.onPrimaryContainer,
+                          ),
                   ),
                   const SizedBox(height: 12),
                   Text(user.name, style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),

@@ -88,6 +88,11 @@ const DEFAULT_SETTINGS = [
     value: 'false',
     description: 'Allow sales officers to place orders for any retailer',
   },
+  {
+    key: 'next_challan_number',
+    value: '1',
+    description: 'Next challan sequence number',
+  },
 ];
 
 async function main() {

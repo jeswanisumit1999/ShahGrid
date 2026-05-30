@@ -92,9 +92,13 @@ export async function listDirectSales(params: {
   cursor?: string;
   limit: number;
   salesOfficerId?: string;
+  search?: string;
 }) {
   const sales = await prisma.directSale.findMany({
-    where: params.salesOfficerId ? { salesOfficerId: params.salesOfficerId } : undefined,
+    where: {
+      ...(params.salesOfficerId && { salesOfficerId: params.salesOfficerId }),
+      ...(params.search && { customerName: { contains: params.search, mode: 'insensitive' } }),
+    },
     orderBy: { createdAt: 'desc' },
     ...buildPrismaPage(params),
     include: {

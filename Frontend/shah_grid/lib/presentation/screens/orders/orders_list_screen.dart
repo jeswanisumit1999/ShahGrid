@@ -6,6 +6,7 @@ import '../../providers/auth_provider.dart';
 import '../../../core/utils/format_utils.dart';
 import '../../widgets/common/app_error_widget.dart';
 import '../../widgets/common/pagination_list_view.dart';
+import '../../widgets/common/status_badge.dart';
 
 class OrdersListScreen extends ConsumerStatefulWidget {
   const OrdersListScreen({super.key});
@@ -134,20 +135,46 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> {
                 hasMore: result.hasMore,
                 onLoadMore: notifier.loadMore,
                 onRefresh: () => notifier.load(refresh: true),
-                itemBuilder: (ctx, order) => Card(
-                  child: ListTile(
-                    title: Text(order.retailerName ?? order.retailerId),
-                    subtitle: Text(
-                        '${order.orderItems.length} item(s)  •  ${formatDate(order.createdAt)}'),
-                    trailing: Text(
-                      formatCurrency(order.totalAmount),
-                      style: const TextStyle(fontWeight: FontWeight.bold),
+                itemBuilder: (ctx, order) {
+                  final shipmentStatuses = order.shipments
+                      .whereType<Map>()
+                      .map((s) => s['status'] as String? ?? '')
+                      .toList();
+                  final orderStatus = _deriveOrderStatus(shipmentStatuses);
+                  return Card(
+                    child: ListTile(
+                      title: Text(order.retailerName ?? order.retailerId),
+                      subtitle: Text(
+                          '${order.orderItems.length} item(s)  •  ${formatDate(order.createdAt)}'),
+                      trailing: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(formatCurrency(order.totalAmount),
+                              style: const TextStyle(fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 4),
+                          StatusBadge(orderStatus),
+                        ],
+                      ),
+                      onTap: () => ctx.go('/orders/${order.id}'),
                     ),
-                    onTap: () => ctx.go('/orders/${order.id}'),
-                  ),
-                ),
+                  );
+                },
               ),
       ),
     );
   }
+}
+
+String _deriveOrderStatus(List<String> shipmentStatuses) {
+  if (shipmentStatuses.isEmpty) return 'Pending';
+  const terminal = {'Delivered', 'Cancelled', 'Returned'};
+  final allTerminal = shipmentStatuses.every(terminal.contains);
+  if (allTerminal) {
+    if (shipmentStatuses.any((s) => s == 'Delivered')) return 'Delivered';
+    if (shipmentStatuses.any((s) => s == 'Returned')) return 'Returned';
+    return 'Cancelled';
+  }
+  if (shipmentStatuses.any((s) => s == 'Ready for Dispatch')) return 'Ready';
+  return 'Processing';
 }

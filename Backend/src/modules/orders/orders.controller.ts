@@ -42,6 +42,13 @@ export async function updateOrderItem(req: Request, res: Response, next: NextFun
   } catch (err) { next(err); }
 }
 
+export async function updateOrder(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await ordersService.updateOrderNotes(req.params.id, req.body.notes);
+    sendSuccess(res, result);
+  } catch (err) { next(err); }
+}
+
 export async function addOrderItem(req: Request, res: Response, next: NextFunction) {
   try {
     const result = await ordersService.addOrderItem(req.params.id, req.body, req.user!.id);

@@ -62,12 +62,59 @@ class _CheckInsScreenState extends ConsumerState<CheckInsScreen> {
   }
 
   Future<void> _checkIn() async {
+    // Ask for optional notes first
+    final notesCtrl = TextEditingController();
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.viewInsetsOf(ctx).bottom + 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('Check In', style: Theme.of(ctx).textTheme.titleLarge),
+            const SizedBox(height: 4),
+            Text('Your current GPS location will be recorded.',
+                style: Theme.of(ctx).textTheme.bodySmall),
+            const SizedBox(height: 16),
+            TextField(
+              controller: notesCtrl,
+              autofocus: false,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: 'Notes (optional)',
+                hintText: 'e.g. Visited ABC store, discussed new products…',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(ctx, true),
+              icon: const Icon(Icons.my_location),
+              label: const Text('Record Check-In'),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true || !mounted) { notesCtrl.dispose(); return; }
+
     setState(() => _checkingIn = true);
+    final notes = notesCtrl.text.trim();
+    notesCtrl.dispose();
     try {
       final position = await _getCurrentPosition();
       await ref.read(checkInsRepositoryProvider).create(
         latitude: position.$1,
         longitude: position.$2,
+        notes: notes.isEmpty ? null : notes,
       );
       await _load(refresh: true);
       if (mounted) {
@@ -117,7 +164,7 @@ class _CheckInsScreenState extends ConsumerState<CheckInsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Check-Ins'),
+        title: Text(_items.isNotEmpty ? 'Check-Ins (${_items.length}${_hasMore ? '+' : ''})' : 'Check-Ins'),
         actions: [
           IconButton(icon: const Icon(Icons.refresh), onPressed: () => _load(refresh: true)),
         ],

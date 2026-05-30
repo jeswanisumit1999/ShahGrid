@@ -10,6 +10,7 @@ class PaginationListView<T> extends StatefulWidget {
     required this.onLoadMore,
     this.onRefresh,
     this.padding,
+    this.emptyWidget,
   });
 
   final List<T> items;
@@ -18,6 +19,8 @@ class PaginationListView<T> extends StatefulWidget {
   final VoidCallback onLoadMore;
   final Future<void> Function()? onRefresh;
   final EdgeInsets? padding;
+  /// Shown when [items] is empty (e.g. "No results for 'xyz'").
+  final Widget? emptyWidget;
 
   @override
   State<PaginationListView<T>> createState() => _PaginationListViewState<T>();
@@ -46,6 +49,21 @@ class _PaginationListViewState<T> extends State<PaginationListView<T>> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.items.isEmpty && widget.emptyWidget != null) {
+      if (widget.onRefresh != null) {
+        return RefreshIndicator(
+          onRefresh: widget.onRefresh!,
+          child: ListView(children: [
+            SizedBox(
+              height: MediaQuery.sizeOf(context).height * 0.5,
+              child: Center(child: widget.emptyWidget!),
+            ),
+          ]),
+        );
+      }
+      return Center(child: widget.emptyWidget!);
+    }
+
     final child = ListView.builder(
       controller: _controller,
       padding: widget.padding,

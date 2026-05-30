@@ -11,11 +11,13 @@ export const createRetailerSchema = z.object({
   salesOfficerIds: z.array(z.string().uuid()).optional(),
 });
 
-export const updateRetailerSchema = createRetailerSchema.partial();
+export const updateRetailerSchema = createRetailerSchema.partial().extend({
+  isActive: z.boolean().optional(),
+});
 
 export const listRetailersQuerySchema = z.object({
   cursor: z.string().optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  limit: z.coerce.number().int().min(1).max(500).default(20),
   search: z.string().optional(),
   salesOfficerId: z.string().uuid().optional(),
 });

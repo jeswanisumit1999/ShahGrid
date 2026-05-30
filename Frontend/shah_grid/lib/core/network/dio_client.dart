@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -111,9 +112,13 @@ class _AuthInterceptor extends Interceptor {
       return;
     }
 
-    // Convert Dio errors into AppException
+    // Convert Dio errors into AppException.
+    // When responseType is bytes, error bodies arrive as List<int> — decode them first.
     final statusCode = err.response?.statusCode;
-    final data = err.response?.data;
+    dynamic data = err.response?.data;
+    if (data is List<int>) {
+      try { data = jsonDecode(utf8.decode(data)); } catch (_) {}
+    }
     if (data is Map<String, dynamic>) {
       handler.reject(
         DioException(

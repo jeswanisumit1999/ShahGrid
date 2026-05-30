@@ -9,6 +9,8 @@ final retailersProvider =
   (ref) => RetailersNotifier(ref.read(retailersRepositoryProvider)),
 );
 
+enum RetailerSort { nameAsc, nameDesc, pendingDesc, pendingAsc }
+
 class RetailersNotifier
     extends StateNotifier<AsyncValue<PaginatedResult<RetailerModel>>> {
   RetailersNotifier(this._repo) : super(const AsyncValue.loading()) {
@@ -18,7 +20,25 @@ class RetailersNotifier
   final RetailersRepository _repo;
   String? _cursor;
   String _search = '';
+  RetailerSort _sort = RetailerSort.nameAsc;
   final List<RetailerModel> _items = [];
+
+  void _emit() {
+    final sorted = [..._items];
+    switch (_sort) {
+      case RetailerSort.nameAsc:
+        sorted.sort((a, b) => a.name.compareTo(b.name));
+      case RetailerSort.nameDesc:
+        sorted.sort((a, b) => b.name.compareTo(a.name));
+      case RetailerSort.pendingDesc:
+        sorted.sort((a, b) => b.pendingCollection.compareTo(a.pendingCollection));
+      case RetailerSort.pendingAsc:
+        sorted.sort((a, b) => a.pendingCollection.compareTo(b.pendingCollection));
+    }
+    state = AsyncValue.data(
+      PaginatedResult(items: List.unmodifiable(sorted), hasMore: _cursor != null),
+    );
+  }
 
   Future<void> load({bool refresh = false}) async {
     if (refresh) {
@@ -30,9 +50,7 @@ class RetailersNotifier
       final result = await _repo.list(cursor: _cursor, search: _search);
       _items.addAll(result.items);
       _cursor = result.nextCursor;
-      state = AsyncValue.data(
-        PaginatedResult(items: List.unmodifiable(_items), hasMore: result.hasMore),
-      );
+      _emit();
     } catch (e, st) {
       state = AsyncValue.error(e, st);
     }
@@ -42,6 +60,13 @@ class RetailersNotifier
     _search = query;
     await load(refresh: true);
   }
+
+  void sortBy(RetailerSort sort) {
+    _sort = sort;
+    if (state.hasValue) _emit();
+  }
+
+  RetailerSort get currentSort => _sort;
 
   Future<void> loadMore() async {
     if (!(state.valueOrNull?.hasMore ?? false)) return;

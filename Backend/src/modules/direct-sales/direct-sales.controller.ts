@@ -11,8 +11,8 @@ export async function createDirectSale(req: Request, res: Response, next: NextFu
 
 export async function listDirectSales(req: Request, res: Response, next: NextFunction) {
   try {
-    const { cursor, limit, salesOfficerId } = req.query as any;
-    const result = await service.listDirectSales({ cursor, limit: Number(limit) || 20, salesOfficerId });
+    const { cursor, limit, salesOfficerId, search } = req.query as any;
+    const result = await service.listDirectSales({ cursor, limit: Number(limit) || 20, salesOfficerId, search });
     sendSuccess(res, result.items, 200, { nextCursor: result.nextCursor, hasMore: result.hasMore });
   } catch (err) { next(err); }
 }

@@ -21,13 +21,14 @@ class _DirectSalesNotifier
   }
   final DirectSalesRepository _repo;
   String? _cursor;
+  String _search = '';
   final List<DirectSaleModel> _items = [];
 
   Future<void> load({bool refresh = false}) async {
     if (refresh) { _cursor = null; _items.clear(); }
     try {
       if (_items.isEmpty) state = const AsyncValue.loading();
-      final r = await _repo.list(cursor: _cursor);
+      final r = await _repo.list(cursor: _cursor, search: _search.isEmpty ? null : _search);
       _items.addAll(r.items);
       _cursor = r.nextCursor;
       state = AsyncValue.data(
@@ -35,23 +36,70 @@ class _DirectSalesNotifier
     } catch (e, st) { state = AsyncValue.error(e, st); }
   }
 
+  Future<void> search(String q) async {
+    _search = q;
+    await load(refresh: true);
+  }
+
   Future<void> loadMore() async {
     if (state.valueOrNull?.hasMore ?? false) await load();
   }
 }
 
-class DirectSalesListScreen extends ConsumerWidget {
+class DirectSalesListScreen extends ConsumerStatefulWidget {
   const DirectSalesListScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DirectSalesListScreen> createState() => _DirectSalesListScreenState();
+}
+
+class _DirectSalesListScreenState extends ConsumerState<DirectSalesListScreen> {
+  bool _searchVisible = false;
+  final _searchCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  void _toggleSearch() {
+    setState(() {
+      _searchVisible = !_searchVisible;
+      if (!_searchVisible) {
+        _searchCtrl.clear();
+        ref.read(directSalesListProvider.notifier).search('');
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final asyncState = ref.watch(directSalesListProvider);
     final notifier = ref.read(directSalesListProvider.notifier);
     final user = ref.watch(authStateProvider).valueOrNull;
     final canCreate = user?.hasPermission('orders', 'direct_sale') ?? false;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Direct Sales')),
+      appBar: AppBar(
+        title: _searchVisible
+            ? TextField(
+                controller: _searchCtrl,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  hintText: 'Search by customer name…',
+                  border: InputBorder.none,
+                ),
+                onChanged: (q) => notifier.search(q),
+              )
+            : const Text('Direct Sales'),
+        actions: [
+          IconButton(
+            icon: Icon(_searchVisible ? Icons.close : Icons.search),
+            onPressed: _toggleSearch,
+          ),
+        ],
+      ),
       floatingActionButton: canCreate
           ? FloatingActionButton.extended(
               onPressed: () async {
@@ -80,12 +128,16 @@ class DirectSalesListScreen extends ConsumerWidget {
                               size: 64,
                               color: Theme.of(context).colorScheme.outlineVariant),
                           const SizedBox(height: 16),
-                          Text('No direct sales yet',
-                              style: Theme.of(context).textTheme.titleMedium),
+                          Text(
+                            _searchCtrl.text.isNotEmpty
+                                ? 'No results for "${_searchCtrl.text}"'
+                                : 'No direct sales yet',
+                            style: Theme.of(context).textTheme.titleMedium),
                           const SizedBox(height: 8),
-                          Text('Tap + New Sale to record one',
-                              style: TextStyle(
-                                  color: Theme.of(context).colorScheme.outline)),
+                          if (_searchCtrl.text.isEmpty)
+                            Text('Tap + New Sale to record one',
+                                style: TextStyle(
+                                    color: Theme.of(context).colorScheme.outline)),
                         ],
                       ),
                     ),
@@ -98,15 +150,38 @@ class DirectSalesListScreen extends ConsumerWidget {
                 onLoadMore: notifier.loadMore,
                 onRefresh: () => notifier.load(refresh: true),
                 itemBuilder: (ctx, sale) => ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: Theme.of(ctx).colorScheme.secondaryContainer,
-                    child: Icon(Icons.person_outline,
-                        color: Theme.of(ctx).colorScheme.onSecondaryContainer),
+                  leading: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      CircleAvatar(
+                        backgroundColor: Theme.of(ctx).colorScheme.secondaryContainer,
+                        child: Icon(Icons.person_outline,
+                            color: Theme.of(ctx).colorScheme.onSecondaryContainer),
+                      ),
+                      if (sale.challanNumber != null)
+                        Positioned(
+                          right: -4,
+                          bottom: -4,
+                          child: Container(
+                            padding: const EdgeInsets.all(2),
+                            decoration: BoxDecoration(
+                              color: Theme.of(ctx).colorScheme.primary,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.receipt_outlined,
+                              size: 12,
+                              color: Theme.of(ctx).colorScheme.onPrimary,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                   title: Text(sale.customerName),
                   subtitle: Text([
                     if (sale.salesOfficerName != null) sale.salesOfficerName!,
                     formatDate(sale.createdAt),
+                    if (sale.challanNumber != null) 'Challan #${sale.challanNumber}',
                   ].join('  •  ')),
                   trailing: Text(
                     formatCurrency(sale.totalAmount),

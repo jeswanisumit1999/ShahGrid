@@ -32,6 +32,9 @@ class DashboardScreen extends ConsumerWidget {
     final showCheckinShortcut = !isAdminLevel && _hasAny(user, ['checkins.create']);
     final showAssignedRetailers = !isAdminLevel && _hasAny(user, ['orders.create']) &&
         !_hasAny(user, ['orders.manage', 'shipments.manage']);
+    final canCreateOrder = _hasAny(user, ['orders.create', 'orders.manage']);
+    final canRecordPayment = _hasAny(user, ['payments.record']);
+    final showQuickActions = canCreateOrder || canRecordPayment;
 
     final showNothing = !isAdminLevel && !showMyStats && !showStockAlerts &&
         !showGodownStats && !showCheckinShortcut && !showAssignedRetailers;
@@ -61,6 +64,14 @@ class DashboardScreen extends ConsumerWidget {
                   ?.copyWith(color: Theme.of(context).colorScheme.primary),
             ),
             const SizedBox(height: 20),
+
+            if (showQuickActions) ...[
+              _QuickActionsSection(
+                canCreateOrder: canCreateOrder,
+                canRecordPayment: canRecordPayment,
+              ),
+              const SizedBox(height: 16),
+            ],
 
             if (showCheckinShortcut) ...[
               _CheckInShortcut(),
@@ -122,6 +133,51 @@ class DashboardScreen extends ConsumerWidget {
 
   static bool _hasAny(UserModel? user, List<String> perms) =>
       perms.any((p) => user?.permissions.contains(p) ?? false);
+}
+
+// ── Quick Actions ─────────────────────────────────────────────────────────────
+
+class _QuickActionsSection extends StatelessWidget {
+  const _QuickActionsSection({
+    required this.canCreateOrder,
+    required this.canRecordPayment,
+  });
+  final bool canCreateOrder;
+  final bool canRecordPayment;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Quick Actions', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            if (canCreateOrder) ...[
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: () => context.go('/orders/new'),
+                  icon: const Icon(Icons.add_shopping_cart),
+                  label: const Text('New Order'),
+                ),
+              ),
+            ],
+            if (canCreateOrder && canRecordPayment) const SizedBox(width: 12),
+            if (canRecordPayment) ...[
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => context.go('/payments'),
+                  icon: const Icon(Icons.payments_outlined),
+                  label: const Text('Record Payment'),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
 }
 
 // ── Check-In Shortcut ─────────────────────────────────────────────────────────
@@ -229,9 +285,11 @@ class _GlobalStatsSection extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            _StatCard(label: 'Total Orders', value: '${data.totalOrders}', icon: Icons.receipt_long),
+            _StatCard(label: 'Total Orders', value: '${data.totalOrders}', icon: Icons.receipt_long,
+                onTap: () => context.go('/orders')),
             const SizedBox(width: 12),
-            _StatCard(label: 'Retailers', value: '${data.totalRetailers}', icon: Icons.storefront),
+            _StatCard(label: 'Retailers', value: '${data.totalRetailers}', icon: Icons.storefront,
+                onTap: () => context.go('/retailers')),
           ]),
           const SizedBox(height: 12),
           _StatCard(
@@ -239,6 +297,7 @@ class _GlobalStatsSection extends StatelessWidget {
             value: formatCurrency(data.totalPendingCollection),
             icon: Icons.account_balance_wallet,
             fullWidth: true,
+            onTap: () => context.go('/payments'),
           ),
           const SizedBox(height: 24),
           Text('Recent Orders', style: Theme.of(context).textTheme.titleMedium),
@@ -279,6 +338,7 @@ class _MyStatsSection extends StatelessWidget {
             label: 'My Orders',
             value: '${data.orderCount}',
             icon: Icons.receipt_long,
+            onTap: () => context.go('/orders'),
           ));
         }
         if (hasVisits) {
@@ -287,6 +347,7 @@ class _MyStatsSection extends StatelessWidget {
             label: 'Visits',
             value: '${data.visitCount}',
             icon: Icons.pin_drop,
+            onTap: () => context.go('/checkins'),
           ));
         }
 
@@ -303,6 +364,7 @@ class _MyStatsSection extends StatelessWidget {
                 value: formatCurrency(data.totalPaymentsCollected),
                 icon: Icons.payments,
                 fullWidth: true,
+                onTap: () => context.go('/payments'),
               ),
             ],
           ],
@@ -335,6 +397,7 @@ class _GodownStatsSection extends StatelessWidget {
             count: stats.pendingAvailability,
             icon: Icons.hourglass_empty,
             color: Theme.of(context).colorScheme.error,
+            onTap: () => context.go('/shipments'),
           ),
           const SizedBox(height: 8),
           _ShipmentStatCard(
@@ -342,6 +405,7 @@ class _GodownStatsSection extends StatelessWidget {
             count: stats.pendingVerification,
             icon: Icons.fact_check_outlined,
             color: Theme.of(context).colorScheme.tertiary,
+            onTap: () => context.go('/shipments'),
           ),
           const SizedBox(height: 8),
           _ShipmentStatCard(
@@ -349,6 +413,7 @@ class _GodownStatsSection extends StatelessWidget {
             count: stats.readyForDispatch,
             icon: Icons.local_shipping_outlined,
             color: Colors.green,
+            onTap: () => context.go('/shipments'),
           ),
         ],
       ),
@@ -362,36 +427,40 @@ class _ShipmentStatCard extends StatelessWidget {
     required this.count,
     required this.icon,
     required this.color,
+    this.onTap,
   });
 
   final String label;
   final int count;
   final IconData icon;
   final Color color;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
+    final content = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 28),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
+          ),
+          Text(
+            '$count',
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: count > 0 ? color : Theme.of(context).colorScheme.outline,
+                ),
+          ),
+        ],
+      ),
+    );
     return Card(
       margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            Icon(icon, color: color, size: 28),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
-            ),
-            Text(
-              '$count',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: count > 0 ? color : Theme.of(context).colorScheme.outline,
-                  ),
-            ),
-          ],
-        ),
-      ),
+      clipBehavior: onTap != null ? Clip.antiAlias : Clip.none,
+      child: onTap != null ? InkWell(onTap: onTap, child: content) : content,
     );
   }
 }
@@ -500,37 +569,46 @@ class _StatCard extends StatelessWidget {
     required this.value,
     required this.icon,
     this.fullWidth = false,
+    this.onTap,
   });
 
   final String label;
   final String value;
   final IconData icon;
   final bool fullWidth;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
+    final content = Padding(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        children: [
+          Icon(icon, color: Theme.of(context).colorScheme.primary),
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: Theme.of(context).textTheme.bodySmall),
+              Text(value,
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleLarge
+                      ?.copyWith(fontWeight: FontWeight.bold)),
+            ],
+          ),
+          if (onTap != null) ...[
+            const Spacer(),
+            Icon(Icons.chevron_right,
+                color: Theme.of(context).colorScheme.outline, size: 18),
+          ],
+        ],
+      ),
+    );
     final card = Card(
       margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Icon(icon, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: Theme.of(context).textTheme.bodySmall),
-                Text(value,
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleLarge
-                        ?.copyWith(fontWeight: FontWeight.bold)),
-              ],
-            ),
-          ],
-        ),
-      ),
+      clipBehavior: onTap != null ? Clip.antiAlias : Clip.none,
+      child: onTap != null ? InkWell(onTap: onTap, child: content) : content,
     );
     return fullWidth ? card : Expanded(child: card);
   }

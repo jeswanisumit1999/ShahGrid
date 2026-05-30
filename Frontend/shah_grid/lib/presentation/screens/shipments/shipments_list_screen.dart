@@ -39,8 +39,15 @@ class ShipmentsListScreen extends ConsumerWidget {
                   shipment.companyName ?? shipment.companyId,
                 ].join(' — '),
               ),
-              subtitle: Text(formatDate(shipment.createdAt)),
+              subtitle: Text([
+                formatDate(shipment.createdAt),
+                if (shipment.shipmentItems.isNotEmpty)
+                  '${shipment.shipmentItems.length} item${shipment.shipmentItems.length == 1 ? '' : 's'}',
+                if (shipment.notes != null && shipment.notes!.isNotEmpty)
+                  shipment.notes!,
+              ].join('  •  ')),
               trailing: StatusBadge(shipment.status),
+              isThreeLine: shipment.notes != null && shipment.notes!.isNotEmpty,
               onTap: () => ctx.go('/shipments/${shipment.id}'),
             ),
           ),

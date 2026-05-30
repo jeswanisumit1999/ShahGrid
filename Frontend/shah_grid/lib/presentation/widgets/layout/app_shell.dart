@@ -133,12 +133,8 @@ class AppShell extends ConsumerWidget {
     final inOverflow = overflowDests.any((d) => loc.startsWith(d.path));
     final bottomIdx = mainIdx >= 0 ? mainIdx : (inOverflow ? mainDests.length : 0);
 
-    final currentLabel = visibleDests
-        .firstWhere((d) => loc.startsWith(d.path), orElse: () => visibleDests.first)
-        .label;
 
     return Scaffold(
-      appBar: AppBar(title: Text(currentLabel)),
       body: child,
       bottomNavigationBar: NavigationBar(
         selectedIndex: bottomIdx,

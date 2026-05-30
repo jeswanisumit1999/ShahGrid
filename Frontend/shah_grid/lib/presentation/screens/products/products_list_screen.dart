@@ -88,6 +88,7 @@ class ProductsListScreen extends ConsumerWidget {
             subtitle: Text([
               if (product.company != null) product.company!.name,
               if (product.sku != null) 'SKU: ${product.sku}',
+              if (product.isLowStock) '⚠ Low stock',
             ].join('  •  ')),
             trailing: Row(mainAxisSize: MainAxisSize.min, children: [
               Column(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -98,7 +99,17 @@ class ProductsListScreen extends ConsumerWidget {
                           ? Theme.of(ctx).colorScheme.error
                           : null,
                     )),
-                const Text('in stock', style: TextStyle(fontSize: 11)),
+                Text(
+                  product.lowStockThreshold != null
+                      ? 'min ${product.lowStockThreshold}'
+                      : 'in stock',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: product.isLowStock
+                        ? Theme.of(ctx).colorScheme.error
+                        : null,
+                  ),
+                ),
               ]),
               if (canAdjust || canCreate) ...[
                 const SizedBox(width: 4),
@@ -186,38 +197,95 @@ class ProductsListScreen extends ConsumerWidget {
 
   void _showAdjustDialog(BuildContext context, WidgetRef ref, ProductModel product) {
     final ctrl = TextEditingController();
+    int? delta;
 
     showDialog(
       context: context,
-      builder: (dialogCtx) => AlertDialog(
-        title: Text('Adjust stock — ${product.name}'),
-        content: TextField(
-          controller: ctrl,
-          decoration: const InputDecoration(labelText: 'Delta (e.g. +50 or -10)'),
-          keyboardType: const TextInputType.numberWithOptions(signed: true),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogCtx), child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () async {
-              final delta = int.tryParse(ctrl.text);
-              if (delta == null || delta == 0) return;
-              Navigator.pop(dialogCtx);
-              try {
-                await ref.read(productsRepositoryProvider).adjustStock(product.id, delta);
-                ref.read(productsListProvider.notifier).load(refresh: true);
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(friendlyError(e)), backgroundColor: Colors.red),
-                  );
-                }
-              }
-            },
-            child: const Text('Apply'),
-          ),
-        ],
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (_, setState) {
+          final after = delta != null ? product.stockQuantity + delta! : null;
+          return AlertDialog(
+            title: Text('Adjust stock — ${product.name}'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _StockLabel('Before', product.stockQuantity, null),
+                    Icon(Icons.arrow_forward,
+                        color: Theme.of(dialogCtx).colorScheme.outline),
+                    _StockLabel(
+                      'After',
+                      after ?? product.stockQuantity,
+                      after != null && after != product.stockQuantity
+                          ? (after > product.stockQuantity ? Colors.green : Colors.orange)
+                          : null,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: ctrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Delta (e.g. +50 or -10)',
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: const TextInputType.numberWithOptions(signed: true),
+                  onChanged: (v) => setState(() { delta = int.tryParse(v); }),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(dialogCtx), child: const Text('Cancel')),
+              FilledButton(
+                onPressed: delta == null || delta == 0
+                    ? null
+                    : () async {
+                        final d = delta!;
+                        Navigator.pop(dialogCtx);
+                        try {
+                          await ref.read(productsRepositoryProvider).adjustStock(product.id, d);
+                          ref.read(productsListProvider.notifier).load(refresh: true);
+                        } catch (e) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(friendlyError(e)), backgroundColor: Colors.red),
+                            );
+                          }
+                        }
+                      },
+                child: const Text('Apply'),
+              ),
+            ],
+          );
+        },
       ),
+    );
+  }
+}
+
+class _StockLabel extends StatelessWidget {
+  const _StockLabel(this.label, this.value, this.color);
+  final String label;
+  final int value;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(label, style: Theme.of(context).textTheme.labelSmall),
+        const SizedBox(height: 4),
+        Text(
+          '$value',
+          style: TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+      ],
     );
   }
 }

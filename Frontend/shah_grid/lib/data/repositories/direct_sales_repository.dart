@@ -18,11 +18,13 @@ class DirectSalesRepository {
     String? cursor,
     int limit = 20,
     String? salesOfficerId,
+    String? search,
   }) async {
     final response = await _dio.get(ApiConstants.directSales, queryParameters: {
       if (cursor != null) 'cursor': cursor,
       'limit': limit,
       if (salesOfficerId != null) 'salesOfficerId': salesOfficerId,
+      if (search != null && search.isNotEmpty) 'search': search,
     });
     final body = response.data as Map<String, dynamic>;
     final pagination = body['pagination'] as Map<String, dynamic>? ?? {};

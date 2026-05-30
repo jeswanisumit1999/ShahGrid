@@ -66,7 +66,7 @@ export function drawChallan(doc: PDoc, opts: ChallanOpts): void {
 
   // 1 ─ DELIVERY CHALLAN banner
   const BW = 150; const BH = 18; const BX = (PW - BW) / 2;
-  doc.rect(BX, y, BW, BH).fillAndStroke('#1b3a6e', '#1b3a6e');
+  doc.rect(BX, y, BW, BH).fillAndStroke('#000000', '#000000');
   doc.fillColor('#ffffff').fontSize(8).font('Helvetica-Bold')
     .text('DELIVERY CHALLAN', BX, y + 5, { width: BW, align: 'center' });
   doc.fillColor('#000000');
@@ -122,7 +122,7 @@ export function drawChallan(doc: PDoc, opts: ChallanOpts): void {
     doc.moveTo(x, tableTop).lineTo(x, tableTop + tableH).lineWidth(1).stroke();
   });
 
-  doc.rect(L + 0.5, tableTop + 0.5, W - 1, HDR_H - 1).fill('#e8e8e8').fillColor('#000000');
+  doc.rect(L + 0.5, tableTop + 0.5, W - 1, HDR_H - 1).fill('#ffffff').fillColor('#000000');
   const hY = tableTop + (HDR_H - 8) / 2;
   doc.fontSize(8).font('Helvetica-Bold')
     .text('DESCRIPTION', C_DESC + 5, hY, { width: W_DESC - 8 })
@@ -136,8 +136,8 @@ export function drawChallan(doc: PDoc, opts: ChallanOpts): void {
     const rowY = tableTop + HDR_H + i * ROW_H;
     if (i < dataRows - 1) {
       doc.moveTo(L, rowY + ROW_H).lineTo(R, rowY + ROW_H)
-        .lineWidth(0.4).strokeColor('#bbbbbb').stroke()
-        .lineWidth(1).strokeColor('#000000');
+        .lineWidth(0.4).strokeColor('#000000').stroke()
+        .lineWidth(1);
     }
     if (i < opts.items.length) {
       const it = opts.items[i];
@@ -177,9 +177,10 @@ export async function claimChallanNumber(
 ): Promise<string> {
   const setting = await tx.appSetting.findUnique({ where: { key: 'next_challan_number' } });
   const current = parseInt(setting?.value ?? '1', 10);
-  await tx.appSetting.update({
+  await tx.appSetting.upsert({
     where: { key: 'next_challan_number' },
-    data: { value: String(current + 1) },
+    create: { key: 'next_challan_number', value: String(current + 1), description: 'Next challan sequence number' },
+    update: { value: String(current + 1) },
   });
   const num = String(current).padStart(4, '0');
   if (entityType === 'order') {
