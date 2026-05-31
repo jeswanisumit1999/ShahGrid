@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../presentation/providers/auth_provider.dart';
 import '../presentation/screens/auth/login_screen.dart';
 import '../presentation/screens/auth/auth_callback_screen.dart';
+import '../presentation/screens/splash/splash_screen.dart';
 import '../presentation/screens/dashboard/dashboard_screen.dart';
 import '../presentation/screens/retailers/retailers_list_screen.dart';
 import '../presentation/screens/retailers/retailer_detail_screen.dart';
@@ -39,16 +40,18 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isLoading = authValue.isLoading;
       final isLoggedIn = authValue.valueOrNull != null;
       final loc = state.matchedLocation;
-      final isOnLogin = loc == '/login';
+      final isOnLogin    = loc == '/login';
       final isOnCallback = loc == '/auth/callback';
 
-      if (isLoading) return null;
+      if (isLoading) return loc == '/splash' ? null : '/splash';
       if (isOnCallback) return null; // let the callback screen handle itself
+      if (loc == '/splash') return isLoggedIn ? '/dashboard' : '/login';
       if (!isLoggedIn && !isOnLogin) return '/login';
       if (isLoggedIn && isOnLogin) return '/dashboard';
       return null;
     },
     routes: [
+      GoRoute(path: '/splash', builder: (_, __) => const SplashScreen()),
       GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
       GoRoute(
         path: '/auth/callback',

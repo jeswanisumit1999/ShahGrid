@@ -103,12 +103,16 @@ export function drawChallan(doc: PDoc, opts: ChallanOpts): void {
   y += 18;
 
   // 5 ─ GSTIN line
-  const midX = L + W / 2;
-  const gstinText = opts.recipientGstin ? `  ${opts.recipientGstin}  ` : '';
-  doc.moveTo(L, y + 6).lineTo(midX - 26, y + 6).lineWidth(0.5).stroke().lineWidth(1);
-  doc.fontSize(8).font('Helvetica').text(gstinText, midX - 26, y, { width: 52, align: 'center' });
-  doc.fontSize(8).font('Helvetica-Bold').text('GSTIN', midX - 13, y);
-  doc.moveTo(midX + 26, y + 6).lineTo(R, y + 6).lineWidth(0.5).stroke().lineWidth(1);
+  if (opts.recipientGstin) {
+    const label = `GSTIN No.: ${opts.recipientGstin}`;
+    const labelW = 140;
+    const lx = (PW - labelW) / 2;
+    doc.moveTo(L, y + 6).lineTo(lx - 6, y + 6).lineWidth(0.5).stroke().lineWidth(1);
+    doc.fontSize(8).font('Helvetica-Bold').text(label, lx, y, { width: labelW, align: 'center' });
+    doc.moveTo(lx + labelW + 6, y + 6).lineTo(R, y + 6).lineWidth(0.5).stroke().lineWidth(1);
+  } else {
+    doc.moveTo(L, y + 6).lineTo(R, y + 6).lineWidth(0.5).stroke().lineWidth(1);
+  }
   y += 15;
 
   // 6 ─ Items table

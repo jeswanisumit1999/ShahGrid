@@ -35,16 +35,96 @@
   <!-- Google Sign-In for web (required by google_sign_in_web) -->
   <meta name="google-signin-client_id"
         content="723960646687-ufn6kd20f5t86b5ji5vtr4ihr3eqop88.apps.googleusercontent.com">
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #0d1b2a;
+    }
+
+    #html-splash {
+      position: fixed;
+      inset: 0;
+      background: linear-gradient(160deg, #0d1b2a 0%, #0f2744 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      animation: sg-fadein 0.6s ease both;
+    }
+
+    .sg-brand {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 52px;
+      font-weight: 700;
+      letter-spacing: -1.5px;
+      color: #ffffff;
+      animation: sg-slideup 0.6s ease both;
+    }
+
+    .sg-brand span {
+      color: #1A73E8;
+    }
+
+    .sg-tagline {
+      margin-top: 10px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 13px;
+      font-weight: 400;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.35);
+      animation: sg-slideup 0.7s 0.1s ease both;
+    }
+
+    .sg-dots {
+      display: flex;
+      gap: 10px;
+      margin-top: 52px;
+      animation: sg-slideup 0.7s 0.2s ease both;
+    }
+
+    .sg-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #1A73E8;
+      animation: sg-bounce 1.3s ease-in-out infinite;
+    }
+
+    .sg-dot:nth-child(2) { animation-delay: 0.18s; }
+    .sg-dot:nth-child(3) { animation-delay: 0.36s; }
+
+    @keyframes sg-fadein {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+
+    @keyframes sg-slideup {
+      from { opacity: 0; transform: translateY(18px); }
+      to   { opacity: 1; transform: translateY(0);    }
+    }
+
+    @keyframes sg-bounce {
+      0%, 60%, 100% { transform: translateY(0);     opacity: 0.5; }
+      30%            { transform: translateY(-14px); opacity: 1;   }
+    }
+  </style>
 </head>
 <body>
-  <!--
-    You can customize the "flutter_bootstrap.js" script.
-    This is useful to provide a custom configuration to the Flutter loader
-    or to give the user feedback during the initialization process.
+  <!-- HTML splash — visible while Flutter engine loads, faded out by flutter_bootstrap.js -->
+  <div id="html-splash">
+    <div class="sg-brand">Shah<span>Grid</span></div>
+    <div class="sg-tagline">Sales &amp; Distribution</div>
+    <div class="sg-dots">
+      <div class="sg-dot"></div>
+      <div class="sg-dot"></div>
+      <div class="sg-dot"></div>
+    </div>
+  </div>
 
-    For more details:
-    * https://docs.flutter.dev/platform-integration/web/initialization
-  -->
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
