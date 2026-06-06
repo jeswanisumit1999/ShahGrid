@@ -1,9 +1,12 @@
 import { Router } from 'express';
+import multer from 'multer';
 import * as controller from './retailers.controller';
 import { authenticate } from '../../middleware/auth.middleware';
 import { requirePermission } from '../../middleware/rbac.middleware';
 import { validate } from '../../middleware/validate.middleware';
 import { createRetailerSchema, updateRetailerSchema, listRetailersQuerySchema, retailerLedgerQuerySchema } from './retailers.validators';
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 const router = Router();
 
@@ -104,6 +107,7 @@ router.get('/:id', requirePermission('retailers', 'read'), controller.getRetaile
  *       403:
  *         $ref: '#/components/responses/Forbidden'
  */
+router.post('/import', requirePermission('retailers', 'manage'), upload.single('file'), controller.importRetailers);
 router.post('/', requirePermission('retailers', 'manage'), validate(createRetailerSchema), controller.createRetailer);
 
 /**

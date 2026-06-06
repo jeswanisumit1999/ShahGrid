@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import * as retailersService from './retailers.service';
 import { sendSuccess } from '../../utils/response';
 import { prisma } from '../../lib/prisma';
+import { AppError } from '../../errors/AppError';
 
 export async function listRetailers(req: Request, res: Response, next: NextFunction) {
   try {
@@ -83,4 +84,15 @@ export async function getRetailerLedger(req: Request, res: Response, next: NextF
       retailer: result.retailer,
     });
   } catch (err) { next(err); }
+}
+
+export async function importRetailers(req: Request, res: Response, next: NextFunction) {
+  try {
+    const file = (req as any).file as { buffer: Buffer } | undefined;
+    if (!file) return next(new AppError('No file uploaded', 400, 'VALIDATION_ERROR'));
+    const result = await retailersService.importRetailers(file.buffer);
+    sendSuccess(res, result, 200);
+  } catch (err) {
+    next(err);
+  }
 }

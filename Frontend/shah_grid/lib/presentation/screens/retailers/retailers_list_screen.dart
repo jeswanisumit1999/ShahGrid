@@ -1,7 +1,11 @@
+import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
+// ignore: avoid_web_libraries_in_flutter
+import 'dart:html' as html;
 import '../../providers/retailers_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../../data/models/retailer_model.dart';
@@ -13,6 +17,83 @@ import '../../widgets/common/pagination_list_view.dart';
 
 class RetailersListScreen extends ConsumerWidget {
   const RetailersListScreen({super.key});
+
+  Future<({Uint8List bytes, String name})?> _pickFile() {
+    final completer = Completer<({Uint8List bytes, String name})?>();
+    final input = html.FileUploadInputElement()
+      ..accept = '.xls,.xlsx';
+    input.onChange.listen((_) {
+      final file = input.files?.first;
+      if (file == null) { completer.complete(null); return; }
+      final reader = html.FileReader();
+      reader.onLoad.listen((_) {
+        final bytes = reader.result as Uint8List;
+        completer.complete((bytes: bytes, name: file.name));
+      });
+      reader.onError.listen((_) => completer.complete(null));
+      reader.readAsArrayBuffer(file);
+    });
+    input.click();
+    return completer.future;
+  }
+
+  Future<void> _importXls(BuildContext context, WidgetRef ref) async {
+    final picked = await _pickFile();
+    if (picked == null || !context.mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(children: [
+          CircularProgressIndicator(),
+          SizedBox(width: 16),
+          Text('Importing…'),
+        ]),
+      ),
+    );
+
+    try {
+      final repo = ref.read(retailersRepositoryProvider);
+      final res = await repo.importFromXls(picked.bytes, picked.name);
+      if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
+      if (!context.mounted) return;
+
+      ref.read(retailersProvider.notifier).load(refresh: true);
+
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Import Complete'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _ImportResultRow(Icons.check_circle, Colors.green, '${res.created} retailers created'),
+              _ImportResultRow(Icons.skip_next, Colors.orange, '${res.skipped} already existed (skipped)'),
+              if (res.errors.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text('${res.errors.length} error(s):', style: const TextStyle(fontWeight: FontWeight.w600)),
+                ...res.errors.take(5).map((e) => Text('• $e', style: const TextStyle(fontSize: 12))),
+                if (res.errors.length > 5)
+                  Text('… and ${res.errors.length - 5} more', style: const TextStyle(fontSize: 12)),
+              ],
+            ],
+          ),
+          actions: [
+            FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('Done')),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(friendlyError(e)), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
 
   void _confirmDelete(BuildContext context, WidgetRef ref, RetailerModel retailer, RetailersNotifier notifier) {
     showDialog(
@@ -62,6 +143,12 @@ class RetailersListScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Retailers'),
         actions: [
+          if (canCreate)
+            IconButton(
+              icon: const Icon(Icons.upload_file_outlined),
+              tooltip: 'Import from XLS',
+              onPressed: () => _importXls(context, ref),
+            ),
           PopupMenuButton<RetailerSort>(
             icon: const Icon(Icons.sort),
             tooltip: 'Sort',
@@ -153,4 +240,23 @@ class RetailersListScreen extends ConsumerWidget {
       ),
     );
   }
+}
+
+class _ImportResultRow extends StatelessWidget {
+  const _ImportResultRow(this.icon, this.color, this.label);
+  final IconData icon;
+  final Color color;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 18),
+            const SizedBox(width: 8),
+            Text(label),
+          ],
+        ),
+      );
 }

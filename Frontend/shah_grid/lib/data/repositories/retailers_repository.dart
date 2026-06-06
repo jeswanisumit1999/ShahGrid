@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/api_constants.dart';
@@ -54,6 +55,20 @@ class RetailersRepository {
 
   Future<void> deleteRetailer(String id) async {
     await _dio.delete(ApiConstants.retailerById(id));
+  }
+
+  Future<({int created, int skipped, List<String> errors})> importFromXls(
+      Uint8List bytes, String fileName) async {
+    final form = FormData.fromMap({
+      'file': MultipartFile.fromBytes(bytes, filename: fileName),
+    });
+    final response = await _dio.post(ApiConstants.retailersImport, data: form);
+    final data = unwrap<Map<String, dynamic>>(response);
+    return (
+      created: data['created'] as int,
+      skipped: data['skipped'] as int,
+      errors: (data['errors'] as List).cast<String>(),
+    );
   }
 
   Future<({List<RetailerLedgerEntry> items, bool hasMore, String? nextCursor, Map<String, dynamic> retailer})>

@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import * as XLSX from 'xlsx';
 import { prisma } from '../../lib/prisma';
 import { AppError } from '../../errors/AppError';
 import { buildPrismaPage, buildPaginationResult } from '../../utils/pagination';
@@ -221,4 +222,98 @@ export async function updateRetailer(
 
     return updated;
   });
+}
+
+// ── XLS Import ────────────────────────────────────────────────────────────────
+
+interface ImportRow { name: string; debit: number; credit: number; net: number; }
+export interface ImportResult { created: number; skipped: number; errors: string[]; }
+
+function parseImportBuffer(buffer: Buffer): ImportRow[] {
+  const wb = XLSX.read(buffer, { type: 'buffer' });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows: unknown[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+  const headerIdx = rows.findIndex(r =>
+    r.map(c => String(c).trim().toLowerCase()).includes('particulars')
+  );
+  if (headerIdx === -1) throw AppError.badRequest('No "Particulars" header found in the file.');
+
+  const hdr  = rows[headerIdx].map(c => String(c).trim().toLowerCase());
+  const nameCol  = hdr.findIndex(c => c === 'particulars');
+  const debitCol = hdr.findIndex(c => c.includes('debit'));
+  const creditCol= hdr.findIndex(c => c.includes('credit'));
+  if (debitCol === -1) throw AppError.badRequest('No "Debit" column found in the file.');
+
+  const result: ImportRow[] = [];
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const row  = rows[i];
+    const name = String(row[nameCol] ?? '').trim();
+    if (!name) continue;
+    if (name.toLowerCase().startsWith('grand total')) break;
+    const debit  = toNum(row[debitCol]);
+    const credit = creditCol !== -1 ? toNum(row[creditCol]) : 0;
+    if (debit === 0 && credit === 0) continue;
+    result.push({ name, debit, credit, net: debit - credit });
+  }
+  return result;
+}
+
+function toNum(v: unknown): number {
+  if (v === null || v === undefined || v === '') return 0;
+  const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/,/g, ''));
+  return isNaN(n) ? 0 : n;
+}
+
+export async function importRetailers(buffer: Buffer): Promise<ImportResult> {
+  const rows = parseImportBuffer(buffer);
+  let created = 0, skipped = 0;
+  const errors: string[] = [];
+  let counter = 1;
+
+  for (const row of rows) {
+    try {
+      const existing = await prisma.retailer.findFirst({
+        where: { name: { equals: row.name, mode: 'insensitive' } },
+        select: { id: true },
+      });
+      if (existing) { skipped++; continue; }
+
+      // Generate unique placeholder phone — retry if collision
+      let phone = '';
+      for (let attempt = 0; attempt < 10; attempt++) {
+        const candidate = `IMPORT-${String(counter++).padStart(4, '0')}`;
+        const taken = await prisma.retailer.findUnique({ where: { phone: candidate }, select: { id: true } });
+        if (!taken) { phone = candidate; break; }
+      }
+      if (!phone) { errors.push(`${row.name}: could not assign placeholder phone`); continue; }
+
+      const net = new Prisma.Decimal(row.net.toFixed(2));
+      await prisma.$transaction(async (tx) => {
+        const retailer = await tx.retailer.create({
+          data: {
+            name: row.name,
+            phone,
+            pendingCollection: net.greaterThan(0) ? net : new Prisma.Decimal(0),
+          },
+        });
+        if (row.net !== 0) {
+          await tx.retailerLedger.create({
+            data: {
+              retailerId:    retailer.id,
+              delta:         net,
+              balanceAfter:  net,
+              type:          'opening_balance',
+              referenceType: 'import',
+              notes: `Tally import — debit: ${row.debit.toFixed(2)}, credit: ${row.credit.toFixed(2)}`,
+            },
+          });
+        }
+      });
+      created++;
+    } catch (err: any) {
+      errors.push(`${row.name}: ${err?.message ?? 'unknown error'}`);
+    }
+  }
+  return { created, skipped, errors };
 }
