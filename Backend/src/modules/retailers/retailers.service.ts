@@ -5,6 +5,7 @@ import { AppError } from '../../errors/AppError';
 import { buildPrismaPage, buildPaginationResult } from '../../utils/pagination';
 import { writeAuditLog } from '../../utils/audit';
 import { writeRetailerLedger } from '../../utils/retailerLedger';
+import { generateLedgerPdf } from '../../utils/ledgerPdf';
 
 export async function listRetailers(params: {
   cursor?: string;
@@ -221,6 +222,48 @@ export async function updateRetailer(
     });
 
     return updated;
+  });
+}
+
+export async function generateRetailerLedgerPdf(retailerId: string): Promise<Buffer> {
+  const retailer = await prisma.retailer.findUnique({
+    where: { id: retailerId },
+    select: { id: true, name: true, gstin: true, pendingCollection: true },
+  });
+  if (!retailer) throw AppError.notFound('Retailer');
+
+  const entries = await prisma.retailerLedger.findMany({
+    where: { retailerId },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  const actorIds = [...new Set(entries.map((e) => e.actorId).filter(Boolean))] as string[];
+  const actors = actorIds.length
+    ? await prisma.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, name: true } })
+    : [];
+  const actorMap = Object.fromEntries(actors.map((a) => [a.id, a.name]));
+
+  const companyIds = [...new Set(entries.map((e) => e.companyId).filter(Boolean))] as string[];
+  const companies = companyIds.length
+    ? await prisma.company.findMany({ where: { id: { in: companyIds } }, select: { id: true, name: true } })
+    : [];
+  const companyMap = Object.fromEntries(companies.map((c) => [c.id, c.name]));
+
+  return generateLedgerPdf({
+    retailerName: retailer.name,
+    retailerGstin: retailer.gstin,
+    currentBalance: Number(retailer.pendingCollection),
+    generatedAt: new Date(),
+    entries: entries.map((e) => ({
+      id: e.id,
+      type: e.type,
+      delta: Number(e.delta),
+      balanceAfter: Number(e.balanceAfter),
+      createdAt: e.createdAt,
+      actorName: e.actorId ? (actorMap[e.actorId] ?? null) : null,
+      companyName: e.companyId ? (companyMap[e.companyId] ?? null) : null,
+      referenceType: e.referenceType,
+    })),
   });
 }
 

@@ -86,6 +86,15 @@ export async function getRetailerLedger(req: Request, res: Response, next: NextF
   } catch (err) { next(err); }
 }
 
+export async function getRetailerLedgerPdf(req: Request, res: Response, next: NextFunction) {
+  try {
+    const buffer = await retailersService.generateRetailerLedgerPdf(req.params.id);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename="ledger.pdf"');
+    res.send(buffer);
+  } catch (err) { next(err); }
+}
+
 export async function importRetailers(req: Request, res: Response, next: NextFunction) {
   try {
     const file = (req as any).file as { buffer: Buffer } | undefined;

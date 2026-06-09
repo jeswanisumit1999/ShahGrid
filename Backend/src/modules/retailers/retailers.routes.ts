@@ -76,6 +76,7 @@ router.get('/', requirePermission('retailers', 'read'), validate(listRetailersQu
  *       404:
  *         $ref: '#/components/responses/NotFound'
  */
+router.get('/:id/ledger/pdf', requirePermission('retailers', 'read'), controller.getRetailerLedgerPdf);
 router.get('/:id/ledger', requirePermission('retailers', 'read'), validate(retailerLedgerQuerySchema, 'query'), controller.getRetailerLedger);
 router.get('/:id', requirePermission('retailers', 'read'), controller.getRetailer);
 

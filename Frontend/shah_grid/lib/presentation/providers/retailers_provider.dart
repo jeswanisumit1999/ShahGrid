@@ -22,6 +22,7 @@ class RetailersNotifier
   String _search = '';
   RetailerSort _sort = RetailerSort.nameAsc;
   final List<RetailerModel> _items = [];
+  bool _isLoading = false;
 
   void _emit() {
     final sorted = [..._items];
@@ -41,10 +42,12 @@ class RetailersNotifier
   }
 
   Future<void> load({bool refresh = false}) async {
+    if (!refresh && _isLoading) return;
     if (refresh) {
       _cursor = null;
       _items.clear();
     }
+    _isLoading = true;
     try {
       if (_items.isEmpty) state = const AsyncValue.loading();
       final result = await _repo.list(cursor: _cursor, search: _search);
@@ -53,6 +56,8 @@ class RetailersNotifier
       _emit();
     } catch (e, st) {
       state = AsyncValue.error(e, st);
+    } finally {
+      _isLoading = false;
     }
   }
 

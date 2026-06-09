@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import '../../../data/models/retailer_ledger_model.dart';
 import '../../../data/repositories/retailers_repository.dart';
 import '../../../core/utils/format_utils.dart';
+import '../../../core/utils/pdf_preview.dart';
+import '../../../core/network/dio_client.dart';
 import '../../widgets/common/app_error_widget.dart';
 
 final _retailerLedgerProvider = StateNotifierProvider.autoDispose
@@ -70,14 +72,54 @@ class _LedgerNotifier extends StateNotifier<AsyncValue<_LedgerState>> {
   }
 }
 
-class RetailerLedgerScreen extends ConsumerWidget {
+class RetailerLedgerScreen extends ConsumerStatefulWidget {
   const RetailerLedgerScreen({super.key, required this.retailerId});
   final String retailerId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(_retailerLedgerProvider(retailerId));
-    final notifier = ref.read(_retailerLedgerProvider(retailerId).notifier);
+  ConsumerState<RetailerLedgerScreen> createState() =>
+      _RetailerLedgerScreenState();
+}
+
+class _RetailerLedgerScreenState extends ConsumerState<RetailerLedgerScreen> {
+  bool _generatingPdf = false;
+
+  Future<void> _downloadLedger(String retailerName) async {
+    setState(() => _generatingPdf = true);
+    try {
+      final bytes = await ref
+          .read(retailersRepositoryProvider)
+          .downloadLedger(widget.retailerId);
+      final safeName = retailerName.replaceAll(RegExp(r'[^\w\s]'), '').trim();
+      final filename = 'ledger_$safeName.pdf';
+      final handle = createPdfPreview(bytes);
+      if (!mounted) { handle.dispose(); return; }
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => _LedgerPreviewDialog(handle: handle, filename: filename),
+      );
+      handle.dispose();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text(friendlyError(e)),
+              backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _generatingPdf = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final async = ref.watch(_retailerLedgerProvider(widget.retailerId));
+    final notifier =
+        ref.read(_retailerLedgerProvider(widget.retailerId).notifier);
+    final retailerName =
+        async.valueOrNull?.retailerName ?? '';
 
     return Scaffold(
       appBar: AppBar(
@@ -94,6 +136,21 @@ class RetailerLedgerScreen extends ConsumerWidget {
             ],
           ),
         ),
+        actions: [
+          if (async.hasValue)
+            _generatingPdf
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16),
+                    child: SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2)),
+                  )
+                : IconButton(
+                    tooltip: 'Download / Print Ledger',
+                    icon: const Icon(Icons.picture_as_pdf_outlined),
+                    onPressed: () => _downloadLedger(retailerName),
+                  ),
+        ],
       ),
       body: async.when(
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -101,6 +158,42 @@ class RetailerLedgerScreen extends ConsumerWidget {
             AppErrorWidget(error: e, onRetry: () => notifier.load(refresh: true)),
         data: (state) => _LedgerBody(state: state, notifier: notifier),
       ),
+    );
+  }
+}
+
+class _LedgerPreviewDialog extends StatelessWidget {
+  const _LedgerPreviewDialog({required this.handle, required this.filename});
+  final PdfPreviewHandle handle;
+  final String filename;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog.fullscreen(
+      child: Column(children: [
+        AppBar(
+          automaticallyImplyLeading: false,
+          title: Text(filename),
+          actions: [
+            TextButton.icon(
+              onPressed: () => handle.download(filename),
+              icon: const Icon(Icons.download_outlined),
+              label: const Text('Download'),
+            ),
+            TextButton.icon(
+              onPressed: handle.print,
+              icon: const Icon(Icons.print_outlined),
+              label: const Text('Print'),
+            ),
+            const SizedBox(width: 4),
+            IconButton(
+              icon: const Icon(Icons.close),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ],
+        ),
+        Expanded(child: HtmlElementView(viewType: handle.viewType)),
+      ]),
     );
   }
 }

@@ -71,6 +71,14 @@ class RetailersRepository {
     );
   }
 
+  Future<Uint8List> downloadLedger(String retailerId) async {
+    final response = await _dio.get<List<int>>(
+      ApiConstants.retailerLedgerPdf(retailerId),
+      options: Options(responseType: ResponseType.bytes),
+    );
+    return Uint8List.fromList(response.data!);
+  }
+
   Future<({List<RetailerLedgerEntry> items, bool hasMore, String? nextCursor, Map<String, dynamic> retailer})>
       getRetailerLedger(String retailerId, {String? cursor, int limit = 20}) async {
     final response = await _dio.get(ApiConstants.retailerLedger(retailerId), queryParameters: {

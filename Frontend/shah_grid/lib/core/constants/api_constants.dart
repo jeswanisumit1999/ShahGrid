@@ -28,6 +28,7 @@ class ApiConstants {
   static const String retailersImport = '/retailers/import';
   static String retailerById(String id) => '/retailers/$id';
   static String retailerLedger(String id) => '/retailers/$id/ledger';
+  static String retailerLedgerPdf(String id) => '/retailers/$id/ledger/pdf';
 
   // Products
   static const String products = '/products';
