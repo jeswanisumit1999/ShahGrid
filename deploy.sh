@@ -5,7 +5,8 @@ set -euo pipefail
 DOCKER_USER="sumitjeswani"
 BACKEND_IMAGE="$DOCKER_USER/shahgrid-backend:latest"
 FRONTEND_IMAGE="$DOCKER_USER/shahgrid-frontend:latest"
-API_BASE_URL="https://shahgrid.publicvm.com/api/v1"
+#API_BASE_URL="https://shahgrid.publicvm.com/api/v1"
+API_BASE_URL="https://app.shahgrid.com/api/v1"
 FRONTEND_DIR="Frontend/shah_grid"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
