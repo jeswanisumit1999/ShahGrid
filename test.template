@@ -1,0 +1,1 @@
+https://$host$request_uri ${DOMAIN}
