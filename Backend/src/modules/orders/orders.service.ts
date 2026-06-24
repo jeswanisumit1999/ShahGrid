@@ -569,11 +569,15 @@ export async function listOrders(params: {
   limit: number;
   retailerId?: string;
   salesOfficerId?: string;
+  assignedSalesOfficerId?: string;
   search?: string;
 }) {
   const where = {
     ...(params.retailerId && { retailerId: params.retailerId }),
     ...(params.salesOfficerId && { salesOfficerId: params.salesOfficerId }),
+    ...(params.assignedSalesOfficerId && {
+      retailer: { salesOfficers: { some: { salesOfficerId: params.assignedSalesOfficerId } } },
+    }),
     ...(params.search && {
       retailer: { name: { contains: params.search, mode: 'insensitive' as const } },
     }),

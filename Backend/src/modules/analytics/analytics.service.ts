@@ -24,12 +24,16 @@ export async function getDashboardSummary() {
 }
 
 export async function getSalesOfficerStats(salesOfficerId: string) {
-  const [orderCount, visitCount, paymentSum] = await Promise.all([
+  const [orderCount, visitCount, paymentSum, outstandingSum] = await Promise.all([
     prisma.order.count({ where: { salesOfficerId } }),
-    prisma.visitLog.count({ where: { userId: salesOfficerId } }),
+    prisma.checkIn.count({ where: { userId: salesOfficerId } }),
     prisma.payment.aggregate({
       where: { order: { salesOfficerId } },
       _sum: { amount: true },
+    }),
+    prisma.retailer.aggregate({
+      where: { salesOfficers: { some: { salesOfficerId } } },
+      _sum: { pendingCollection: true },
     }),
   ]);
 
@@ -37,6 +41,7 @@ export async function getSalesOfficerStats(salesOfficerId: string) {
     orderCount,
     visitCount,
     totalPaymentsCollected: paymentSum._sum.amount ?? 0,
+    totalOutstanding: outstandingSum._sum.pendingCollection ?? 0,
   };
 }
 

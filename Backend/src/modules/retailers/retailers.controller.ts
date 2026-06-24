@@ -8,7 +8,7 @@ export async function listRetailers(req: Request, res: Response, next: NextFunct
   try {
     const { cursor, limit, search, salesOfficerId } = req.query as any;
     const canViewAll =
-      req.user!.permissions.includes('shipments.manage') ||
+      req.user!.permissions.includes('shipments.view') ||
       (await prisma.appSetting.findUnique({ where: { key: 'sales_officer_view_all_retailers' } }))
         ?.value === 'true';
 
@@ -43,6 +43,14 @@ export async function createRetailer(req: Request, res: Response, next: NextFunc
   try {
     const canSetCreditLimit = req.user!.permissions.includes('retailers.credit_limit');
     const body = canSetCreditLimit ? req.body : { ...req.body, creditLimit: 10000 };
+
+    if (req.user!.roles.includes('Sales Officer')) {
+      const existing: string[] = body.salesOfficerIds ?? [];
+      if (!existing.includes(req.user!.id)) {
+        body.salesOfficerIds = [...existing, req.user!.id];
+      }
+    }
+
     const retailer = await retailersService.createRetailer(body, req.user!.id);
     sendSuccess(res, retailer, 201);
   } catch (err) {

@@ -48,16 +48,20 @@ class MyStatsModel {
     required this.orderCount,
     required this.visitCount,
     required this.totalPaymentsCollected,
+    required this.totalOutstanding,
   });
 
   final int orderCount;
   final int visitCount;
   final double totalPaymentsCollected;
+  final double totalOutstanding;
 
   factory MyStatsModel.fromJson(Map<String, dynamic> json) => MyStatsModel(
         orderCount: json['orderCount'] as int? ?? 0,
         visitCount: json['visitCount'] as int? ?? 0,
         totalPaymentsCollected:
             double.parse((json['totalPaymentsCollected'] ?? 0).toString()),
+        totalOutstanding:
+            double.parse((json['totalOutstanding'] ?? 0).toString()),
       );
 }

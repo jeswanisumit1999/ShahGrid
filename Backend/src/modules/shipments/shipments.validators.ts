@@ -34,6 +34,8 @@ export const listShipmentsQuerySchema = z.object({
 });
 
 export const splitShipmentSchema = z.object({
-  // IDs of ShipmentItems to move into the new child shipment
-  itemIds: z.array(z.string().uuid()).min(1),
+  items: z.array(z.object({
+    id: z.string().uuid(),
+    quantity: z.number().int().min(1).optional(),
+  })).min(1),
 });

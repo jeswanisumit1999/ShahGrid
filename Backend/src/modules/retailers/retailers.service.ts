@@ -269,7 +269,16 @@ export async function generateRetailerLedgerPdf(retailerId: string): Promise<Buf
 
 // ── XLS Import ────────────────────────────────────────────────────────────────
 
-interface ImportRow { name: string; debit: number; credit: number; net: number; }
+interface ImportRow {
+  name: string;
+  phone: string;
+  address: string;
+  gstin: string;
+  creditLimit: number;
+  debit: number;
+  credit: number;
+  salesOfficerEmail: string;
+}
 export interface ImportResult { created: number; skipped: number; errors: string[]; }
 
 function parseImportBuffer(buffer: Buffer): ImportRow[] {
@@ -277,27 +286,46 @@ function parseImportBuffer(buffer: Buffer): ImportRow[] {
   const ws = wb.Sheets[wb.SheetNames[0]];
   const rows: unknown[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
+  // Row 1: Name | Phone Number | Address | GSTIN | Credit Limit | "Existing Pending Amount" (merged) | Sale Officer
+  // Row 2: (empty cols) | Debit | Credit | (empty)
+  // Row 3+: data
   const headerIdx = rows.findIndex(r =>
-    r.map(c => String(c).trim().toLowerCase()).includes('particulars')
+    r.map(c => String(c).trim().toLowerCase()).includes('name')
   );
-  if (headerIdx === -1) throw AppError.badRequest('No "Particulars" header found in the file.');
+  if (headerIdx === -1) throw AppError.badRequest('No "Name" header found in the file.');
 
-  const hdr  = rows[headerIdx].map(c => String(c).trim().toLowerCase());
-  const nameCol  = hdr.findIndex(c => c === 'particulars');
-  const debitCol = hdr.findIndex(c => c.includes('debit'));
-  const creditCol= hdr.findIndex(c => c.includes('credit'));
-  if (debitCol === -1) throw AppError.badRequest('No "Debit" column found in the file.');
+  const col = (arr: string[], keyword: string) => arr.findIndex(c => c.includes(keyword));
+
+  const hdr = rows[headerIdx].map(c => String(c).trim().toLowerCase());
+  const nameCol         = col(hdr, 'name');
+  const phoneCol        = col(hdr, 'phone');
+  const addressCol      = col(hdr, 'address');
+  const gstinCol        = col(hdr, 'gstin');
+  const creditLimitCol  = col(hdr, 'credit limit');
+  const salesOfficerCol = col(hdr, 'sale officer') !== -1 ? col(hdr, 'sale officer') : col(hdr, 'sales officer');
+
+  // Debit/Credit are sub-headers in the row immediately after (under merged "Existing Pending Amount")
+  const subHdr   = (rows[headerIdx + 1] ?? []).map(c => String(c).trim().toLowerCase());
+  const debitCol  = col(subHdr, 'debit');
+  const creditCol = col(subHdr, 'credit');
+
+  if (debitCol === -1) throw AppError.badRequest('No "Debit" sub-header found in the file.');
 
   const result: ImportRow[] = [];
-  for (let i = headerIdx + 1; i < rows.length; i++) {
+  for (let i = headerIdx + 2; i < rows.length; i++) {
     const row  = rows[i];
     const name = String(row[nameCol] ?? '').trim();
     if (!name) continue;
-    if (name.toLowerCase().startsWith('grand total')) break;
-    const debit  = toNum(row[debitCol]);
-    const credit = creditCol !== -1 ? toNum(row[creditCol]) : 0;
-    if (debit === 0 && credit === 0) continue;
-    result.push({ name, debit, credit, net: debit - credit });
+    result.push({
+      name,
+      phone:             String(row[phoneCol] ?? '').trim(),
+      address:           String(row[addressCol] ?? '').trim(),
+      gstin:             String(row[gstinCol] ?? '').trim(),
+      creditLimit:       toNum(creditLimitCol !== -1 ? row[creditLimitCol] : 0),
+      debit:             toNum(row[debitCol]),
+      credit:            creditCol !== -1 ? toNum(row[creditCol]) : 0,
+      salesOfficerEmail: salesOfficerCol !== -1 ? String(row[salesOfficerCol] ?? '').trim() : '',
+    });
   }
   return result;
 }
@@ -314,42 +342,101 @@ export async function importRetailers(buffer: Buffer): Promise<ImportResult> {
   const errors: string[] = [];
   let counter = 1;
 
+  // Pre-load sales officer email → id map
+  const emailSet = [...new Set(rows.map(r => r.salesOfficerEmail).filter(Boolean))];
+  const salesOfficerMap: Record<string, string> = {};
+  if (emailSet.length > 0) {
+    const users = await prisma.user.findMany({
+      where: { email: { in: emailSet } },
+      select: { id: true, email: true },
+    });
+    for (const u of users) { salesOfficerMap[u.email.toLowerCase()] = u.id; }
+  }
+
   for (const row of rows) {
     try {
       const existing = await prisma.retailer.findFirst({
         where: { name: { equals: row.name, mode: 'insensitive' } },
-        select: { id: true },
+        select: { id: true, isActive: true },
       });
-      if (existing) { skipped++; continue; }
+      // Active retailer already exists — skip
+      if (existing?.isActive) { skipped++; continue; }
 
-      // Generate unique placeholder phone — retry if collision
-      let phone = '';
-      for (let attempt = 0; attempt < 10; attempt++) {
-        const candidate = `IMPORT-${String(counter++).padStart(4, '0')}`;
-        const taken = await prisma.retailer.findUnique({ where: { phone: candidate }, select: { id: true } });
-        if (!taken) { phone = candidate; break; }
+      // Use real phone if provided; otherwise generate a placeholder
+      let phone = row.phone;
+      if (!phone) {
+        for (let attempt = 0; attempt < 10; attempt++) {
+          const candidate = `IMPORT-${String(counter++).padStart(4, '0')}`;
+          const taken = await prisma.retailer.findUnique({ where: { phone: candidate }, select: { id: true } });
+          if (!taken) { phone = candidate; break; }
+        }
+        if (!phone) { errors.push(`${row.name}: could not assign placeholder phone`); continue; }
       }
-      if (!phone) { errors.push(`${row.name}: could not assign placeholder phone`); continue; }
 
-      const net = new Prisma.Decimal(row.net.toFixed(2));
+      // Debit → positive pendingCollection; Credit → negative pendingCollection
+      const pending = row.debit > 0
+        ? new Prisma.Decimal(row.debit.toFixed(2))
+        : row.credit > 0
+          ? new Prisma.Decimal((-row.credit).toFixed(2))
+          : new Prisma.Decimal(0);
+
       await prisma.$transaction(async (tx) => {
-        const retailer = await tx.retailer.create({
-          data: {
-            name: row.name,
-            phone,
-            pendingCollection: net.greaterThan(0) ? net : new Prisma.Decimal(0),
-          },
-        });
-        if (row.net !== 0) {
+        // Reactivate a soft-deleted retailer if one exists, otherwise create fresh
+        const retailer = existing
+          ? await tx.retailer.update({
+              where: { id: existing.id },
+              data: {
+                isActive:         true,
+                phone:            phone || undefined,
+                address:          row.address || null,
+                gstin:            row.gstin || null,
+                creditLimit:      new Prisma.Decimal(row.creditLimit.toFixed(2)),
+                pendingCollection: pending,
+              },
+            })
+          : await tx.retailer.create({
+              data: {
+                name:             row.name,
+                phone,
+                address:          row.address || null,
+                gstin:            row.gstin || null,
+                creditLimit:      new Prisma.Decimal(row.creditLimit.toFixed(2)),
+                pendingCollection: pending,
+              },
+            });
+
+        if (row.debit > 0) {
           await tx.retailerLedger.create({
             data: {
               retailerId:    retailer.id,
-              delta:         net,
-              balanceAfter:  net,
+              delta:         pending,
+              balanceAfter:  pending,
               type:          'opening_balance',
               referenceType: 'import',
-              notes: `Tally import — debit: ${row.debit.toFixed(2)}, credit: ${row.credit.toFixed(2)}`,
+              notes:         `Opening balance — debit: ${row.debit.toFixed(2)}`,
             },
+          });
+        } else if (row.credit > 0) {
+          await tx.retailerLedger.create({
+            data: {
+              retailerId:    retailer.id,
+              delta:         pending,
+              balanceAfter:  pending,
+              type:          'opening_credit',
+              referenceType: 'import',
+              notes:         `Opening credit — credit: ${row.credit.toFixed(2)}`,
+            },
+          });
+        }
+
+        const officerId = row.salesOfficerEmail
+          ? salesOfficerMap[row.salesOfficerEmail.toLowerCase()]
+          : undefined;
+        if (officerId) {
+          await tx.retailerSalesOfficer.upsert({
+            where: { retailerId_salesOfficerId: { retailerId: retailer.id, salesOfficerId: officerId } },
+            create: { retailerId: retailer.id, salesOfficerId: officerId },
+            update: {},
           });
         }
       });

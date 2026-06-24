@@ -28,42 +28,30 @@ class ShipmentDetailScreen extends ConsumerWidget {
   }
 }
 
-// ── Transition table mirrored from backend ────────────────────────────────────
+// ── Permission-based transition logic (mirrors backend) ──────────────────────
 
-const _transitions = {
-  'Admin': {
-    'Pending Stock Verification': ['Ready for Dispatch', 'Cancelled'],
-    'Pending Stock Availability': ['Ready for Dispatch', 'Cancelled'],
-    'Ready for Dispatch': ['Delivered', 'Cancelled'],
-    'Delivered': ['Returned'],
-  },
-  'Supply Chain': {
-    'Pending Stock Verification': ['Ready for Dispatch', 'Cancelled'],
-    'Pending Stock Availability': ['Ready for Dispatch', 'Cancelled'],
-    'Ready for Dispatch': ['Cancelled'],
-  },
-  'Godown Manager': {
-    'Pending Stock Verification': ['Ready for Dispatch'],
-    'Pending Stock Availability': ['Ready for Dispatch'],
-    'Ready for Dispatch': ['Delivered'],
-  },
-};
-
-List<String> _allowedTransitions(List<String> roles, String status) {
-  final result = <String>{};
-  for (final role in roles) {
-    final map = _transitions[role];
-    if (map == null) continue;
-    result.addAll(map[status] ?? []);
+List<String> _allowedTransitions(List<String> permissions, String status) {
+  final result = <String>[];
+  const pending = ['Pending Stock Verification', 'Pending Stock Availability'];
+  if (pending.contains(status)) {
+    if (permissions.contains('shipments.verify')) result.add('Ready for Dispatch');
+    if (permissions.contains('shipments.cancel')) result.add('Cancelled');
   }
-  return result.toList();
+  if (status == 'Ready for Dispatch') {
+    if (permissions.contains('shipments.deliver')) result.add('Delivered');
+    if (permissions.contains('shipments.cancel')) result.add('Cancelled');
+  }
+  if (status == 'Delivered') {
+    if (permissions.contains('shipments.return')) result.add('Returned');
+  }
+  return result;
 }
 
-bool _canDeliverWithAdjustments(List<String> roles) =>
-    roles.contains('Admin') || roles.contains('Godown Manager');
+bool _canDeliverWithAdjustments(List<String> permissions) =>
+    permissions.contains('shipments.deliver');
 
-bool _canSplit(List<String> roles) =>
-    roles.contains('Admin') || roles.contains('Supply Chain');
+bool _canSplit(List<String> permissions) =>
+    permissions.contains('shipments.split');
 
 // ── Body ──────────────────────────────────────────────────────────────────────
 
@@ -153,8 +141,8 @@ class _ShipmentBodyState extends ConsumerState<_ShipmentBody> {
   }
 
   Future<void> _onTransitionTap(
-      String newStatus, List<String> roles) async {
-    if (newStatus == 'Delivered' && _canDeliverWithAdjustments(roles)) {
+      String newStatus, List<String> permissions) async {
+    if (newStatus == 'Delivered' && _canDeliverWithAdjustments(permissions)) {
       await _showDeliverySheet(newStatus);
     } else {
       await _confirmTransition(newStatus);
@@ -216,11 +204,8 @@ class _ShipmentBodyState extends ConsumerState<_ShipmentBody> {
   }
 
   Future<void> _showSplitSheet() async {
-    final moved = await showModalBottomSheet<List<String>>(
+    final moved = await showDialog<List<Map<String, dynamic>>>(
       context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      useRootNavigator: true,
       builder: (_) => _SplitShipmentSheet(items: widget.shipment.shipmentItems),
     );
     if (moved == null || moved.isEmpty || !mounted) return;
@@ -252,10 +237,12 @@ class _ShipmentBodyState extends ConsumerState<_ShipmentBody> {
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(authStateProvider).valueOrNull;
-    final roles = user?.roles ?? [];
-    final transitions = _allowedTransitions(roles, widget.shipment.status);
-    final showSplit =
-        widget.shipment.canSplit && _canSplit(roles) && widget.shipment.shipmentItems.length > 1;
+    final permissions = user?.permissions ?? [];
+    final transitions = _allowedTransitions(permissions, widget.shipment.status);
+    final showSplit = widget.shipment.canSplit &&
+        _canSplit(permissions) &&
+        (widget.shipment.shipmentItems.length > 1 ||
+            widget.shipment.shipmentItems.any((i) => i.quantity > 1));
     final scheme = Theme.of(context).colorScheme;
 
     return ListView(
@@ -298,6 +285,15 @@ class _ShipmentBodyState extends ConsumerState<_ShipmentBody> {
                   Expanded(child: Text(widget.shipment.notes!)),
                 ]),
               ],
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () => context.go('/orders/${widget.shipment.orderId}'),
+                icon: const Icon(Icons.receipt_long, size: 18),
+                label: const Text('View Order'),
+                style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
             ]),
           ),
         ),
@@ -374,7 +370,7 @@ class _ShipmentBodyState extends ConsumerState<_ShipmentBody> {
                         ? FilledButton.styleFrom(backgroundColor: scheme.error)
                         : null,
                     onPressed:
-                        _updating ? null : () => _onTransitionTap(t, roles),
+                        _updating ? null : () => _onTransitionTap(t, permissions),
                   )),
               if (showSplit)
                 OutlinedButton.icon(
@@ -572,86 +568,170 @@ class _SplitShipmentSheet extends StatefulWidget {
 }
 
 class _SplitShipmentSheetState extends State<_SplitShipmentSheet> {
-  final Set<String> _selected = {};
+  // itemId → quantity to move
+  final Map<String, int> _selected = {};
+  final Map<String, TextEditingController> _controllers = {};
+
+  @override
+  void dispose() {
+    for (final c in _controllers.values) { c.dispose(); }
+    super.dispose();
+  }
+
+  int get _totalOriginal =>
+      widget.items.fold(0, (sum, i) => sum + i.quantity);
+
+  int get _totalMoved =>
+      _selected.values.fold(0, (sum, q) => sum + q);
+
+  int get _remaining => _totalOriginal - _totalMoved;
 
   @override
   Widget build(BuildContext context) {
-    final remaining = widget.items.length - _selected.length;
-    final canConfirm = _selected.isNotEmpty && remaining >= 1;
+    final canConfirm = _selected.isNotEmpty && _remaining > 0;
 
-    return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-      child: DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.6,
-        maxChildSize: 0.9,
-        builder: (_, scroll) => Column(
+    return AlertDialog(
+      title: const Text('Split Shipment'),
+      content: SizedBox(
+        width: 440,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(
-              child: Container(
-                margin: const EdgeInsets.symmetric(vertical: 8),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.outlineVariant,
-                    borderRadius: BorderRadius.circular(2)),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(children: [
-                Expanded(
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('Split Shipment',
-                        style: Theme.of(context).textTheme.titleLarge),
-                    Text('Select items to move to a new shipment',
-                        style: Theme.of(context).textTheme.bodySmall),
-                  ]),
-                ),
-                FilledButton(
-                  onPressed: canConfirm
-                      ? () => Navigator.pop(context, _selected.toList())
-                      : null,
-                  child: const Text('Split'),
-                ),
-              ]),
-            ),
-            if (!canConfirm && _selected.length == widget.items.length)
+            Text('Select items and quantities to move to a new shipment',
+                style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 8),
+            if (_selected.isNotEmpty && _remaining <= 0)
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                padding: const EdgeInsets.only(bottom: 8),
                 child: Text(
-                  'At least one item must remain in the original shipment',
-                  style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                      fontSize: 12),
+                  'At least one unit must remain in the original shipment',
+                  style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12),
                 ),
               ),
-            const Divider(),
-            Expanded(
-              child: ListView.builder(
-                controller: scroll,
-                itemCount: widget.items.length,
-                itemBuilder: (_, i) {
-                  final item = widget.items[i];
-                  return CheckboxListTile(
-                    value: _selected.contains(item.id),
-                    onChanged: (v) => setState(() {
-                      if (v == true) {
-                        _selected.add(item.id);
-                      } else {
-                        _selected.remove(item.id);
-                      }
-                    }),
-                    title: Text(item.productName ?? item.orderItemId),
-                    subtitle: Text('Qty: ${formatNumber(item.quantity)}'
-                        '${item.productSku != null ? ' • SKU: ${item.productSku}' : ''}'),
-                  );
-                },
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 360),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: widget.items.map((item) {
+                    final isSelected = _selected.containsKey(item.id);
+                    final ctrl = _controllers[item.id];
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        CheckboxListTile(
+                          value: isSelected,
+                          onChanged: (v) {
+                            setState(() {
+                              if (v == true) {
+                                _selected[item.id] = item.quantity;
+                                final c = TextEditingController(text: '${item.quantity}');
+                                _controllers[item.id] = c;
+                              } else {
+                                _selected.remove(item.id);
+                                _controllers[item.id]?.dispose();
+                                _controllers.remove(item.id);
+                              }
+                            });
+                          },
+                          title: Text(item.productName ?? item.orderItemId),
+                          subtitle: Text('Total qty: ${formatNumber(item.quantity)}'
+                              '${item.productSku != null ? ' • ${item.productSku}' : ''}'),
+                          dense: true,
+                        ),
+                        if (isSelected && ctrl != null)
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                            child: Row(
+                              children: [
+                                const SizedBox(width: 40),
+                                const Text('Move qty:'),
+                                const SizedBox(width: 8),
+                                IconButton(
+                                  icon: const Icon(Icons.remove, size: 18),
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: (_selected[item.id] ?? 1) > 1
+                                      ? () => setState(() {
+                                            final v = (_selected[item.id] ?? 1) - 1;
+                                            _selected[item.id] = v;
+                                            ctrl.text = '$v';
+                                          })
+                                      : null,
+                                ),
+                                SizedBox(
+                                  width: 60,
+                                  child: TextField(
+                                    controller: ctrl,
+                                    textAlign: TextAlign.center,
+                                    keyboardType: TextInputType.number,
+                                    decoration: const InputDecoration(
+                                      isDense: true,
+                                      border: OutlineInputBorder(),
+                                      contentPadding: EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                                    ),
+                                    onChanged: (val) {
+                                      final parsed = int.tryParse(val);
+                                      if (parsed != null && parsed >= 1 && parsed <= item.quantity) {
+                                        setState(() => _selected[item.id] = parsed);
+                                      }
+                                    },
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.add, size: 18),
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: (_selected[item.id] ?? 0) < item.quantity
+                                      ? () => setState(() {
+                                            final v = (_selected[item.id] ?? 0) + 1;
+                                            _selected[item.id] = v;
+                                            ctrl.text = '$v';
+                                          })
+                                      : null,
+                                ),
+                                Text(' / ${formatNumber(item.quantity)}',
+                                    style: Theme.of(context).textTheme.bodySmall),
+                              ],
+                            ),
+                          ),
+                      ],
+                    );
+                  }).toList(),
+                ),
               ),
             ),
+            if (_selected.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  'Remaining in original: ${formatNumber(_remaining)}  •  Moving: ${formatNumber(_totalMoved)}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: _remaining > 0
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context).colorScheme.error,
+                      ),
+                ),
+              ),
           ],
         ),
       ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: canConfirm
+              ? () => Navigator.pop(
+                    context,
+                    _selected.entries
+                        .map((e) => {'id': e.key, 'quantity': e.value})
+                        .toList(),
+                  )
+              : null,
+          child: const Text('Split'),
+        ),
+      ],
     );
   }
 }

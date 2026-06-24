@@ -27,11 +27,11 @@ class DashboardScreen extends ConsumerWidget {
           'visits.read', 'visits.create',
         ]);
     final showStockAlerts =
-        _hasAny(user, ['stock.update', 'products.manage', 'shipments.manage']);
-    final showGodownStats = _hasAny(user, ['shipments.manage']);
+        _hasAny(user, ['stock.update', 'products.manage', 'shipments.view']);
+    final showGodownStats = _hasAny(user, ['shipments.view']);
     final showCheckinShortcut = !isAdminLevel && _hasAny(user, ['checkins.create']);
     final showAssignedRetailers = !isAdminLevel && _hasAny(user, ['orders.create']) &&
-        !_hasAny(user, ['orders.manage', 'shipments.manage']);
+        !_hasAny(user, ['orders.manage', 'shipments.view']);
     final canCreateOrder = _hasAny(user, ['orders.create', 'orders.manage']);
     final canRecordPayment = _hasAny(user, ['payments.record']);
     final showQuickActions = canCreateOrder || canRecordPayment;
@@ -40,6 +40,13 @@ class DashboardScreen extends ConsumerWidget {
         !showGodownStats && !showCheckinShortcut && !showAssignedRetailers;
 
     return Scaffold(
+      floatingActionButton: showCheckinShortcut
+          ? FloatingActionButton.extended(
+              onPressed: () => context.go('/checkins', extra: true),
+              icon: const Icon(Icons.location_on),
+              label: const Text('Check-In'),
+            )
+          : null,
       body: RefreshIndicator(
         onRefresh: () async {
           if (isAdminLevel) ref.invalidate(dashboardProvider);
@@ -73,10 +80,6 @@ class DashboardScreen extends ConsumerWidget {
               const SizedBox(height: 16),
             ],
 
-            if (showCheckinShortcut) ...[
-              _CheckInShortcut(),
-              const SizedBox(height: 16),
-            ],
 
             if (isAdminLevel) _GlobalStatsSection(ref: ref),
 
@@ -180,23 +183,6 @@ class _QuickActionsSection extends StatelessWidget {
   }
 }
 
-// ── Check-In Shortcut ─────────────────────────────────────────────────────────
-
-class _CheckInShortcut extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: EdgeInsets.zero,
-      child: ListTile(
-        leading: const Icon(Icons.location_on),
-        title: const Text('Record Check-In'),
-        subtitle: const Text('Log a retailer visit'),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: () => context.go('/checkins'),
-      ),
-    );
-  }
-}
 
 // ── Assigned Retailers ────────────────────────────────────────────────────────
 
@@ -360,9 +346,9 @@ class _MyStatsSection extends StatelessWidget {
             if (hasPayments) ...[
               const SizedBox(height: 12),
               _StatCard(
-                label: 'Payments Collected',
-                value: formatCurrency(data.totalPaymentsCollected),
-                icon: Icons.payments,
+                label: 'Total Outstanding',
+                value: formatCurrency(data.totalOutstanding),
+                icon: Icons.account_balance_wallet_outlined,
                 fullWidth: true,
                 onTap: () => context.go('/payments'),
               ),

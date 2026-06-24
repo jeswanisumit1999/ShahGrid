@@ -10,7 +10,8 @@ import '../../providers/auth_provider.dart';
 import '../../widgets/common/app_error_widget.dart';
 
 class CheckInsScreen extends ConsumerStatefulWidget {
-  const CheckInsScreen({super.key});
+  const CheckInsScreen({super.key, this.openCheckIn = false});
+  final bool openCheckIn;
 
   @override
   ConsumerState<CheckInsScreen> createState() => _CheckInsScreenState();
@@ -28,6 +29,9 @@ class _CheckInsScreenState extends ConsumerState<CheckInsScreen> {
   void initState() {
     super.initState();
     _load();
+    if (widget.openCheckIn) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _checkIn());
+    }
   }
 
   Future<void> _load({bool refresh = false}) async {

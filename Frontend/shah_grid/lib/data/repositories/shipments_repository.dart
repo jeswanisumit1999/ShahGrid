@@ -66,8 +66,8 @@ class ShipmentsRepository {
     return ShipmentModel.fromJson(unwrap<Map<String, dynamic>>(response));
   }
 
-  Future<Map<String, dynamic>> splitShipment(String id, List<String> itemIds) async {
-    final response = await _dio.post(ApiConstants.shipmentSplit(id), data: {'itemIds': itemIds});
+  Future<Map<String, dynamic>> splitShipment(String id, List<Map<String, dynamic>> items) async {
+    final response = await _dio.post(ApiConstants.shipmentSplit(id), data: {'items': items});
     return unwrap<Map<String, dynamic>>(response);
   }
 }

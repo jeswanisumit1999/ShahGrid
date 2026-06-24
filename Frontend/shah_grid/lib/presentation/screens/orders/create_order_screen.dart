@@ -89,7 +89,7 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
   Widget build(BuildContext context) {
     final user = ref.watch(authStateProvider).valueOrNull;
     final canOverride = user?.hasPermission('orders', 'manage') == true ||
-        user?.hasPermission('shipments', 'manage') == true;
+        user?.hasPermission('shipments', 'view') == true;
 
     final canEditPrice = user?.hasPermission('orders', 'create') == true ||
         user?.hasPermission('orders', 'manage') == true;
@@ -364,7 +364,9 @@ class _ProductPickerDialogState extends State<_ProductPickerDialog> {
           : widget.products
               .where((p) =>
                   p.name.toLowerCase().contains(q) ||
-                  (p.sku?.toLowerCase().contains(q) ?? false))
+                  (p.sku?.toLowerCase().contains(q) ?? false) ||
+                  (p.brand?.toLowerCase().contains(q) ?? false) ||
+                  (p.company?.name.toLowerCase().contains(q) ?? false))
               .toList();
     });
   }
@@ -400,7 +402,7 @@ class _ProductPickerDialogState extends State<_ProductPickerDialog> {
                 controller: _searchCtrl,
                 autofocus: true,
                 decoration: const InputDecoration(
-                  hintText: 'Search by name or SKU…',
+                  hintText: 'Search by name, SKU, brand or company…',
                   prefixIcon: Icon(Icons.search),
                   isDense: true,
                   border: OutlineInputBorder(),

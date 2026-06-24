@@ -207,7 +207,7 @@ model Product {
   companyId     String   @map("company_id") @db.Uuid
   categoryId    String?  @map("category_id") @db.Uuid
   name          String   @db.VarChar(255)
-  sku           String?  @unique @db.VarChar(64)
+  sku           String?  @db.VarChar(64)
   brand         String?  @db.VarChar(128)
   price         Decimal  @db.Decimal(10, 2)
   // DB CHECK constraint enforces non-negative: CHECK (stock_quantity >= 0)

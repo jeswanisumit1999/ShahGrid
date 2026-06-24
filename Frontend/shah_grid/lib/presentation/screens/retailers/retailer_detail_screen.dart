@@ -358,7 +358,7 @@ class _AssignOfficersSheetState extends State<_AssignOfficersSheet> {
       final result = await widget.usersRepo.listUsers(limit: 100);
       if (mounted) {
         setState(() {
-          _users = result.items.where((u) => u.isActive).toList();
+          _users = result.items.where((u) => u.isActive && u.roleName == 'Sales Officer').toList();
           _loading = false;
         });
       }

@@ -45,7 +45,7 @@ class AppShell extends ConsumerWidget {
       icon: Icons.local_shipping_outlined,
       label: 'Shipments',
       path: '/shipments',
-      permissions: ['shipments.manage'],
+      permissions: ['shipments.view'],
     ),
     _Dest(
       icon: Icons.payments_outlined,

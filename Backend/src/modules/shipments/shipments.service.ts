@@ -16,32 +16,21 @@ import { adjustCompanyBalance } from '../../utils/companyBalance';
  *   → Delivered : actual delivered quantities recorded; adjustments restore leftover stock
  *   → Returned : all delivered stock is restored; order total reduced
  */
-const ALLOWED_TRANSITIONS: Record<string, Record<string, string[]>> = {
-  Admin: {
-    'Pending Stock Verification': ['Ready for Dispatch', 'Cancelled'],
-    'Pending Stock Availability': ['Ready for Dispatch', 'Cancelled'],
-    'Ready for Dispatch': ['Delivered', 'Cancelled'],
-    Delivered: ['Returned'],
-  },
-  'Supply Chain': {
-    'Pending Stock Verification': ['Ready for Dispatch', 'Cancelled'],
-    'Pending Stock Availability': ['Ready for Dispatch', 'Cancelled'],
-    'Ready for Dispatch': ['Cancelled'],
-  },
-  'Godown Manager': {
-    'Pending Stock Verification': ['Ready for Dispatch'],
-    'Pending Stock Availability': ['Ready for Dispatch'],
-    'Ready for Dispatch': ['Delivered'],
-  },
-};
-
-function getAllowedNext(roles: string[], currentStatus: string): string[] {
-  const allowed = new Set<string>();
-  for (const role of roles) {
-    const transitions = ALLOWED_TRANSITIONS[role]?.[currentStatus] ?? [];
-    transitions.forEach((t) => allowed.add(t));
+function getAllowedNext(permissions: string[], currentStatus: string): string[] {
+  const result: string[] = [];
+  const pending = ['Pending Stock Verification', 'Pending Stock Availability'];
+  if (pending.includes(currentStatus)) {
+    if (permissions.includes('shipments.verify')) result.push('Ready for Dispatch');
+    if (permissions.includes('shipments.cancel')) result.push('Cancelled');
   }
-  return [...allowed];
+  if (currentStatus === 'Ready for Dispatch') {
+    if (permissions.includes('shipments.deliver')) result.push('Delivered');
+    if (permissions.includes('shipments.cancel')) result.push('Cancelled');
+  }
+  if (currentStatus === 'Delivered') {
+    if (permissions.includes('shipments.return')) result.push('Returned');
+  }
+  return result;
 }
 
 type ShipmentItemAdjustment = { shipmentItemId: string; actualQuantity: number };
@@ -51,7 +40,7 @@ export async function updateShipmentStatus(
   newStatus: string,
   notes: string | undefined,
   actorId: string,
-  actorRoles: string[],
+  actorPermissions: string[],
   adjustments?: ShipmentItemAdjustment[],
   force?: boolean
 ) {
@@ -65,7 +54,7 @@ export async function updateShipmentStatus(
     });
     if (!shipment) throw AppError.notFound('Shipment');
 
-    const allowedNext = getAllowedNext(actorRoles, shipment.status);
+    const allowedNext = getAllowedNext(actorPermissions, shipment.status);
     if (!allowedNext.includes(newStatus)) {
       throw AppError.badRequest(
         `Transition from "${shipment.status}" to "${newStatus}" is not allowed for your role`,
@@ -274,7 +263,7 @@ export async function updateShipmentStatus(
 
 export async function splitShipment(
   shipmentId: string,
-  itemIds: string[],
+  items: { id: string; quantity?: number }[],
   actorId: string
 ) {
   return prisma.$transaction(async (tx) => {
@@ -293,12 +282,24 @@ export async function splitShipment(
     }
 
     const allItemIds = shipment.shipmentItems.map((i) => i.id);
-    const invalidIds = itemIds.filter((id) => !allItemIds.includes(id));
+    const invalidIds = items.filter((i) => !allItemIds.includes(i.id));
     if (invalidIds.length > 0) {
       throw AppError.badRequest('Some item IDs do not belong to this shipment', 'INVALID_ITEMS');
     }
-    if (itemIds.length >= allItemIds.length) {
-      throw AppError.badRequest('Must keep at least one item in the original shipment', 'SPLIT_TOO_MANY');
+
+    // Validate quantities and ensure something remains in the original
+    const totalOriginal = shipment.shipmentItems.reduce((sum, i) => sum + i.quantity, 0);
+    let totalMoved = 0;
+    for (const item of items) {
+      const original = shipment.shipmentItems.find((i) => i.id === item.id)!;
+      const moveQty = item.quantity ?? original.quantity;
+      if (moveQty > original.quantity) {
+        throw AppError.badRequest(`Move quantity exceeds available quantity for item ${item.id}`, 'INVALID_QUANTITY');
+      }
+      totalMoved += moveQty;
+    }
+    if (totalMoved >= totalOriginal) {
+      throw AppError.badRequest('Must keep at least one unit in the original shipment', 'SPLIT_TOO_MANY');
     }
 
     // Create the new child shipment
@@ -310,18 +311,39 @@ export async function splitShipment(
       },
     });
 
-    // Move selected items to the new shipment
-    await tx.shipmentItem.updateMany({
-      where: { id: { in: itemIds } },
-      data: { shipmentId: newShipment.id },
-    });
+    // Move items — full move or partial quantity split
+    for (const item of items) {
+      const original = shipment.shipmentItems.find((i) => i.id === item.id)!;
+      const moveQty = item.quantity ?? original.quantity;
+
+      if (moveQty >= original.quantity) {
+        // Move the entire item
+        await tx.shipmentItem.update({
+          where: { id: item.id },
+          data: { shipmentId: newShipment.id },
+        });
+      } else {
+        // Partial split: reduce original, create new item in new shipment
+        await tx.shipmentItem.update({
+          where: { id: item.id },
+          data: { quantity: original.quantity - moveQty },
+        });
+        await tx.shipmentItem.create({
+          data: {
+            shipmentId: newShipment.id,
+            orderItemId: original.orderItemId,
+            quantity: moveQty,
+          },
+        });
+      }
+    }
 
     await writeAuditLog(tx, {
       actorId,
       action: 'split_shipment',
       entityType: 'Shipment',
       entityId: shipmentId,
-      diff: { newShipmentId: newShipment.id, movedItemIds: itemIds },
+      diff: { newShipmentId: newShipment.id, movedItems: items },
     });
 
     return { original: shipment, newShipment };

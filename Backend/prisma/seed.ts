@@ -15,7 +15,12 @@ const PERMISSIONS = [
   { resource: 'orders', action: 'create' },
   { resource: 'orders', action: 'read' },
   { resource: 'orders', action: 'manage' },
-  { resource: 'shipments', action: 'manage' },
+  { resource: 'shipments', action: 'view' },
+  { resource: 'shipments', action: 'verify' },
+  { resource: 'shipments', action: 'cancel' },
+  { resource: 'shipments', action: 'deliver' },
+  { resource: 'shipments', action: 'return' },
+  { resource: 'shipments', action: 'split' },
   { resource: 'stock', action: 'update' },
   { resource: 'products', action: 'read' },
   { resource: 'products', action: 'manage' },
@@ -41,7 +46,8 @@ const PERMISSIONS = [
 const ROLE_PERMISSIONS: Record<string, string[]> = {
   Admin: [
     'orders.create', 'orders.read', 'orders.manage', 'orders.direct_sale',
-    'shipments.manage', 'stock.update', 'products.read', 'products.manage',
+    'shipments.view', 'shipments.verify', 'shipments.cancel', 'shipments.deliver', 'shipments.return', 'shipments.split',
+    'stock.update', 'products.read', 'products.manage',
     'retailers.read', 'retailers.manage', 'retailers.credit_limit',
     'payments.record', 'payments.read',
     'analytics.read', 'roles.manage',
@@ -52,7 +58,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
   ],
   'Supply Chain': [
     'orders.create', 'orders.read', 'orders.manage',
-    'shipments.manage', 'stock.update', 'products.read', 'products.manage',
+    'shipments.view', 'shipments.verify', 'shipments.cancel', 'shipments.return', 'shipments.split',
+    'stock.update', 'products.read', 'products.manage',
     'retailers.read', 'retailers.manage',
     'payments.record', 'payments.read', 'challans.generate', 'returns.manage',
   ],
@@ -66,8 +73,9 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'checkins.create', 'checkins.read',
   ],
   'Godown Manager': [
-    'orders.read', 'orders.direct_sale', 'shipments.manage', 'stock.update',
-    'products.read', 'products.manage', 'retailers.read', 'returns.manage',
+    'orders.read', 'orders.direct_sale',
+    'shipments.view', 'shipments.verify', 'shipments.deliver', 'shipments.return',
+    'stock.update', 'products.read', 'products.manage', 'retailers.read', 'returns.manage',
   ],
   Pending: [],
 };

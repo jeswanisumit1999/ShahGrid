@@ -95,6 +95,6 @@ router.get('/my-stats', controller.getMyStats);
  */
 router.get('/stock-alerts', controller.getStockAlerts);
 
-router.get('/godown-stats', requirePermission('shipments', 'manage'), controller.getGodownStats);
+router.get('/godown-stats', requirePermission('shipments', 'view'), controller.getGodownStats);
 
 export default router;

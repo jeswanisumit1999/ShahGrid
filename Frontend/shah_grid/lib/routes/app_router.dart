@@ -119,7 +119,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             ],
           ),
           GoRoute(path: '/payments', builder: (_, __) => const PaymentsScreen()),
-          GoRoute(path: '/checkins', builder: (_, __) => const CheckInsScreen()),
+          GoRoute(path: '/checkins', builder: (_, state) => CheckInsScreen(openCheckIn: state.extra == true)),
           GoRoute(
             path: '/direct-sales',
             builder: (_, __) => const DirectSalesListScreen(),

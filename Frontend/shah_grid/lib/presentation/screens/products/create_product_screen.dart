@@ -257,8 +257,7 @@ class _CreateProductScreenState extends ConsumerState<CreateProductScreen> {
             TextFormField(
               controller: _skuCtrl,
               decoration: const InputDecoration(
-                labelText: 'SKU (optional)',
-                helperText: 'Unique stock-keeping unit identifier',
+                labelText: 'SKU (optional)'
               ),
             ),
             const SizedBox(height: 12),

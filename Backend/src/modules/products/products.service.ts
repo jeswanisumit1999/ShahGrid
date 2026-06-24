@@ -47,6 +47,8 @@ export async function listProducts(params: {
       OR: [
         { name: { contains: params.search, mode: 'insensitive' } },
         { sku: { contains: params.search, mode: 'insensitive' } },
+        { brand: { contains: params.search, mode: 'insensitive' } },
+        { company: { name: { contains: params.search, mode: 'insensitive' } } },
       ],
     }),
   };
@@ -90,10 +92,6 @@ export async function createProduct(data: {
   stockQuantity: number;
   lowStockThreshold?: number;
 }) {
-  if (data.sku) {
-    const existing = await prisma.product.findUnique({ where: { sku: data.sku } });
-    if (existing) throw AppError.conflict('A product with this SKU already exists');
-  }
   return prisma.product.create({ data });
 }
 

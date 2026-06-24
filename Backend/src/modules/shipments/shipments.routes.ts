@@ -53,7 +53,7 @@ router.use(authenticate);
  *       403:
  *         $ref: '#/components/responses/Forbidden'
  */
-router.get('/', requirePermission('shipments', 'manage'), validate(listShipmentsQuerySchema, 'query'), controller.listShipments);
+router.get('/', requirePermission('shipments', 'view'), validate(listShipmentsQuerySchema, 'query'), controller.listShipments);
 
 /**
  * @openapi
@@ -78,7 +78,7 @@ router.get('/', requirePermission('shipments', 'manage'), validate(listShipments
  *       404:
  *         $ref: '#/components/responses/NotFound'
  */
-router.get('/:id', requirePermission('shipments', 'manage'), controller.getShipment);
+router.get('/:id', requirePermission('shipments', 'view'), controller.getShipment);
 
 /**
  * @openapi
@@ -129,7 +129,7 @@ router.get('/:id', requirePermission('shipments', 'manage'), controller.getShipm
  *       404:
  *         $ref: '#/components/responses/NotFound'
  */
-router.patch('/:id/status', requirePermission('shipments', 'manage'), validate(updateShipmentStatusSchema), controller.updateStatus);
-router.post('/:id/split', requirePermission('shipments', 'manage'), validate(splitShipmentSchema), controller.splitShipment);
+router.patch('/:id/status', requirePermission('shipments', 'view'), validate(updateShipmentStatusSchema), controller.updateStatus);
+router.post('/:id/split', requirePermission('shipments', 'view'), validate(splitShipmentSchema), controller.splitShipment);
 
 export default router;

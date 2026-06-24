@@ -18,7 +18,15 @@ export async function createOrder(req: Request, res: Response, next: NextFunctio
 export async function listOrders(req: Request, res: Response, next: NextFunction) {
   try {
     const { cursor, limit, retailerId, salesOfficerId, search } = req.query as any;
-    const result = await ordersService.listOrders({ cursor, limit: Number(limit) || 20, retailerId, salesOfficerId, search });
+    const isSalesOfficer = req.user!.roles.includes('Sales Officer');
+    const result = await ordersService.listOrders({
+      cursor,
+      limit: Number(limit) || 20,
+      retailerId,
+      salesOfficerId: isSalesOfficer ? undefined : salesOfficerId,
+      assignedSalesOfficerId: isSalesOfficer ? req.user!.id : undefined,
+      search,
+    });
     sendSuccess(res, result.items, 200, { nextCursor: result.nextCursor, hasMore: result.hasMore });
   } catch (err) { next(err); }
 }

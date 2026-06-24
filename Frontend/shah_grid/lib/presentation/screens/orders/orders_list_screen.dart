@@ -16,40 +16,13 @@ class OrdersListScreen extends ConsumerStatefulWidget {
 }
 
 class _OrdersListScreenState extends ConsumerState<OrdersListScreen> {
-  bool _myOrdersOnly = true;
-  bool _initialized = false;
   bool _searchVisible = false;
   final _searchCtrl = TextEditingController();
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (!_initialized) {
-      _initialized = true;
-      final user = ref.read(authStateProvider).valueOrNull;
-      final isSalesOfficer = (user?.hasPermission('orders', 'create') ?? false) &&
-          !(user?.hasPermission('orders', 'manage') ?? false);
-      if (!isSalesOfficer) _myOrdersOnly = false;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_myOrdersOnly && user != null) {
-          ref.read(ordersProvider.notifier).filterBySalesOfficer(user.id);
-        }
-      });
-    }
-  }
 
   @override
   void dispose() {
     _searchCtrl.dispose();
     super.dispose();
-  }
-
-  void _toggleFilter() {
-    final user = ref.read(authStateProvider).valueOrNull;
-    setState(() => _myOrdersOnly = !_myOrdersOnly);
-    ref.read(ordersProvider.notifier).filterBySalesOfficer(
-          _myOrdersOnly ? user?.id : null,
-        );
   }
 
   void _toggleSearch() {
@@ -73,7 +46,6 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> {
     final user = ref.watch(authStateProvider).valueOrNull;
 
     final canCreate = user?.hasPermission('orders', 'create') ?? false;
-    final isSalesOfficer = canCreate && !(user?.hasPermission('orders', 'manage') ?? false);
 
     return Scaffold(
       appBar: AppBar(
@@ -94,12 +66,6 @@ class _OrdersListScreenState extends ConsumerState<OrdersListScreen> {
             tooltip: _searchVisible ? 'Close search' : 'Search',
             onPressed: _toggleSearch,
           ),
-          if (isSalesOfficer && !_searchVisible)
-            TextButton.icon(
-              icon: Icon(_myOrdersOnly ? Icons.people : Icons.person),
-              label: Text(_myOrdersOnly ? 'My Orders' : 'All'),
-              onPressed: _toggleFilter,
-            ),
         ],
       ),
       floatingActionButton: canCreate

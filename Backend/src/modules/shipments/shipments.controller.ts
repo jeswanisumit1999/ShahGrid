@@ -25,7 +25,7 @@ export async function updateStatus(req: Request, res: Response, next: NextFuncti
       req.body.status,
       req.body.notes,
       req.user!.id,
-      req.user!.roles,
+      req.user!.permissions,
       req.body.adjustments,
       req.body.force,
     );
@@ -37,7 +37,7 @@ export async function splitShipment(req: Request, res: Response, next: NextFunct
   try {
     const result = await shipmentsService.splitShipment(
       req.params.id,
-      req.body.itemIds,
+      req.body.items,
       req.user!.id,
     );
     sendSuccess(res, result, 201);
