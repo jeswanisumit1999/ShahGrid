@@ -185,7 +185,7 @@ function Test-Health([int]$retries = 10, [int]$delaySec = 3) {
 }
 
 # Run npm ci + prisma generate + migrate deploy inside a backend release dir.
-function Initialize-Backend([string]$backendDir) {
+function Initialize-Backend([string]$backendDir, [switch]$Seed) {
     Push-Location $backendDir
     try {
         Write-Info "npm ci (installs prisma CLI + runtime deps) ..."
@@ -197,6 +197,13 @@ function Initialize-Backend([string]$backendDir) {
         Write-Info "prisma migrate deploy ..."
         & npx prisma migrate deploy
         if ($LASTEXITCODE -ne 0) { throw "prisma migrate deploy failed" }
+        
+        if ($Seed) {
+            Write-Info "prisma db seed ..."
+            & npx prisma db seed
+            if ($LASTEXITCODE -ne 0) { throw "prisma db seed failed" }
+        }
+
         Write-Ok "backend deps + migrations applied"
     } finally { Pop-Location }
 }

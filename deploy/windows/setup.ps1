@@ -153,7 +153,7 @@ $fa = Find-Asset $rel.Assets 'frontend-'; $fz = Join-Path $tmp $fa.Name; Save-Fi
 if (-not (Test-Path (Join-Path $feDir 'web\index.html'))) { throw "frontend zip missing web\index.html" }
 
 Copy-Item $envFile (Join-Path $beDir '.env') -Force
-Initialize-Backend $beDir
+Initialize-Backend $beDir -Seed
 Set-CurrentJunction $releaseDir
 Set-StateValue 'current_tag' $tagName
 
