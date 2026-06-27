@@ -40,8 +40,8 @@ Assert-Admin
 New-Dirs
 
 # Make sure node + npm/npx from nvm are on PATH for the prisma steps.
-$env:Path = "$($SG.NvmHome);$env:Path"
-$env:Path = "$(Split-Path (Get-NodeExe));$env:Path"
+$env:Path = $SG.NvmHome + ";" + $env:Path
+$env:Path = (Split-Path (Get-NodeExe)) + ";" + $env:Path
 
 Write-Step "Resolving release"
 if ($Tag) {

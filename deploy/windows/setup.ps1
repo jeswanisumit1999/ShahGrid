@@ -60,10 +60,11 @@ Write-Step "Node via nvm (LTS)"
 $nvm = Join-Path $SG.NvmHome 'nvm.exe'
 & $nvm install lts | Write-Info
 & $nvm use lts | Write-Info
-$env:Path = "$($SG.NvmHome);$env:Path"
+
+$env:Path = $SG.NvmHome + ";" + $env:Path
 $nodeExe = Get-NodeExe
 # Put the resolved node dir (where npm.cmd/npx.cmd also live) first on PATH.
-$env:Path = "$(Split-Path $nodeExe);$env:Path"
+$env:Path = (Split-Path $nodeExe) + ";" + $env:Path
 Write-Ok "node: $nodeExe ($(& node -v))"
 
 Write-Step "NSSM"
