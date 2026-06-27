@@ -130,7 +130,10 @@ function Install-NssmService {
         & $nssm remove $Name confirm | Out-Null
         Start-Sleep -Milliseconds 500
     }
-    & $nssm install $Name $Exe $Args | Out-Null
+    & $nssm install $Name $Exe | Out-Null
+    if ($Args) {
+        & $nssm set $Name AppParameters $Args | Out-Null
+    }
     & $nssm set $Name AppDirectory $WorkDir | Out-Null
     & $nssm set $Name AppStdout $StdoutLog | Out-Null
     & $nssm set $Name AppStderr $StderrLog | Out-Null
