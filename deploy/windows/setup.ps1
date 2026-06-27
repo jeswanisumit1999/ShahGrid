@@ -115,7 +115,7 @@ DO `$`$ BEGIN
 END `$`$;
 "@
 & $psql -U postgres -h 127.0.0.1 -p $SG.PgPort -d postgres -v ON_ERROR_STOP=1 -c $createRole | Out-Null
-$dbExists = [string](& $psql -U postgres -h 127.0.0.1 -p $SG.PgPort -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='shahgrid'")
+$dbExists = (& $psql -U postgres -h 127.0.0.1 -p $SG.PgPort -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='shahgrid'") | Out-String
 if ($dbExists.Trim() -ne '1') {
     & $psql -U postgres -h 127.0.0.1 -p $SG.PgPort -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE shahgrid OWNER shahgrid" | Out-Null
     Write-Ok "database 'shahgrid' created"
