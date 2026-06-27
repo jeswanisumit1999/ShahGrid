@@ -131,7 +131,7 @@ Write-Ok "Postgres bound to localhost + restarted ($($pgSvc.Name))"
 Write-Step "pgBouncer service"
 $pgBouncerIni = Join-Path $SG.Shared 'pgbouncer.ini'
 Install-NssmService -Name $SG.Svc.PgBouncer -Exe $SG.PgBouncerExe `
-    -Args "pgbouncer.ini" -WorkDir $SG.Shared `
+    -AppArgs "pgbouncer.ini" -WorkDir $SG.Shared `
     -StdoutLog (Join-Path $SG.Logs 'pgbouncer.out.log') -StderrLog (Join-Path $SG.Logs 'pgbouncer.err.log')
 Start-Service $SG.Svc.PgBouncer
 Write-Ok "pgBouncer up on 127.0.0.1:$($SG.PgBouncerPort)"
@@ -159,14 +159,14 @@ Set-StateValue 'current_tag' $tagName
 
 # -- 7. Backend + Caddy services ----------------------------------------------
 Write-Step "App services"
-Install-NssmService -Name $SG.Svc.Backend -Exe $nodeExe -Args 'dist\server.js' `
+Install-NssmService -Name $SG.Svc.Backend -Exe $nodeExe -AppArgs 'dist\server.js' `
     -WorkDir (Join-Path $SG.Current 'backend') `
     -StdoutLog (Join-Path $SG.Logs 'backend.out.log') -StderrLog (Join-Path $SG.Logs 'backend.err.log')
 Start-Service $SG.Svc.Backend
 
 $caddyFile = Join-Path $SG.Shared 'Caddyfile'
 Install-NssmService -Name $SG.Svc.Caddy -Exe $SG.CaddyExe `
-    -Args "run --config Caddyfile --adapter caddyfile" -WorkDir $SG.Shared `
+    -AppArgs "run --config Caddyfile --adapter caddyfile" -WorkDir $SG.Shared `
     -StdoutLog (Join-Path $SG.Logs 'caddy.out.log') -StderrLog (Join-Path $SG.Logs 'caddy.err.log')
 Start-Service $SG.Svc.Caddy
 

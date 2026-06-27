@@ -120,7 +120,7 @@ function Test-ServiceExists([string]$name) {
 
 function Install-NssmService {
     param(
-        [string]$Name, [string]$Exe, [string]$Args, [string]$WorkDir,
+        [string]$Name, [string]$Exe, [string]$AppArgs, [string]$WorkDir,
         [string]$StdoutLog, [string]$StderrLog
     )
     $nssm = $SG.NssmExe
@@ -131,8 +131,8 @@ function Install-NssmService {
         Start-Sleep -Milliseconds 500
     }
     & $nssm install $Name $Exe | Out-Null
-    if ($Args) {
-        & $nssm set $Name AppParameters $Args | Out-Null
+    if ($AppArgs) {
+        & $nssm set $Name AppParameters $AppArgs | Out-Null
     }
     & $nssm set $Name AppDirectory $WorkDir | Out-Null
     & $nssm set $Name AppStdout $StdoutLog | Out-Null
