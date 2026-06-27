@@ -89,7 +89,19 @@ function Save-File([string]$url, [string]$dest) {
 }
 
 function Expand-Zip([string]$zip, [string]$dest) {
-    if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
+    if (Test-Path $dest) {
+        $retry = 0
+        while ($retry -lt 5) {
+            try {
+                Remove-Item $dest -Recurse -Force -ErrorAction Stop
+                break
+            } catch {
+                $retry++
+                if ($retry -eq 5) { throw }
+                Start-Sleep -Milliseconds 500
+            }
+        }
+    }
     New-Item -ItemType Directory -Path $dest -Force | Out-Null
     Expand-Archive -Path $zip -DestinationPath $dest -Force
 }
