@@ -11,7 +11,7 @@ auto-start at boot and restart on crash — **no Docker, no nginx, no certbot**.
 | Edge / TLS | **Caddy** (custom build w/ `caddy-ratelimit`) | `E:\apps\Caddy\caddy_windows_amd64_custom.exe` | 80, 443 |
 | Frontend | Flutter **web build** (static), served by Caddy | `E:\apps\shahgrid\current\frontend\web` | (via 443) |
 | Backend | **Node/Express** (`dist\server.js`) | `E:\apps\shahgrid\current\backend` | 3000 (localhost) |
-| Pooler | **pgBouncer** (transaction mode) | `E:\apps\pgbouncer\pgbouncer.exe` | 6432 (localhost) |
+| Pooler | **pgBouncer** (transaction mode) | `E:\apps\PgBouncer\bin\pgbouncer.exe` | 6432 (localhost) |
 | Database | **PostgreSQL 16** | `E:\apps\PostgreSQL\16` | 5432 (localhost) |
 | Node mgr | **nvm-windows** (LTS) | `E:\apps\nvm` | — |
 
@@ -78,7 +78,7 @@ Restart-Service shahgrid-backend
    - nvm-windows at `E:\apps\nvm`
    - PostgreSQL 16 at `E:\apps\PostgreSQL\16` (superuser `postgres` / `StrongPassword@9`)
    - Caddy custom build at `E:\apps\Caddy\caddy_windows_amd64_custom.exe`
-   - pgBouncer Windows build at `E:\apps\pgbouncer\pgbouncer.exe`
+   - pgBouncer Windows build at `E:\apps\PgBouncer\bin\pgbouncer.exe`
    - Point DNS **A record** `app.shahgrid.com -> 45.251.14.22`, and forward
      router ports **80 + 443** to this server.
 2. Get the repo on the server (public, no login needed):
