@@ -61,9 +61,14 @@ if ($Tag) {
 Write-Ok "target release: $tagName"
 
 $activeTag = Get-StateValue 'current_tag'
-if ($activeTag -eq $tagName -and -not $Force) {
-    Write-Warn "release $tagName is already active. Use -Force to redeploy."
-    return
+if ($activeTag -eq $tagName) {
+    if (-not $Force) {
+        Write-Warn "release $tagName is already active. Use -Force to redeploy."
+        return
+    }
+    Write-Warn "Redeploying active release. Stopping services to release file locks."
+    Stop-Service -Name $SG.Svc.Backend -Force -ErrorAction SilentlyContinue
+    Stop-Service -Name $SG.Svc.Caddy -Force -ErrorAction SilentlyContinue
 }
 
 $releaseDir  = Join-Path $SG.Releases $tagName
