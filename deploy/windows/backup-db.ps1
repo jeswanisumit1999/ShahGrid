@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Back up the ShahGrid Postgres database to a compressed dump, with retention.
 
