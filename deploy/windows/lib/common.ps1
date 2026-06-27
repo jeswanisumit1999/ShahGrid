@@ -1,4 +1,4 @@
-# ShahGrid — shared helpers for setup.ps1 / update.ps1
+﻿# ShahGrid - shared helpers for setup.ps1 / update.ps1
 # Dot-source this file:  . "$PSScriptRoot\lib\common.ps1"
 #
 # Pure Windows PowerShell 5.1+ / PowerShell 7+. No external modules required.
@@ -6,7 +6,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# ── Constants ────────────────────────────────────────────────────────────────
+# -- Constants ----------------------------------------------------------------
 $Global:SG = [ordered]@{
     Repo        = 'jeswanisumit1999/ShahGrid'   # public GitHub repo (owner/name)
     Domain      = 'app.shahgrid.com'
@@ -34,7 +34,7 @@ $Global:SG.Svc = [ordered]@{
     PgBouncer  = 'shahgrid-pgbouncer'
 }
 
-# ── Pretty logging ───────────────────────────────────────────────────────────
+# -- Pretty logging -----------------------------------------------------------
 function Write-Step([string]$m) { Write-Host "`n==> $m" -ForegroundColor Cyan }
 function Write-Ok  ([string]$m) { Write-Host "  [OK]   $m" -ForegroundColor Green }
 function Write-Warn([string]$m) { Write-Host "  [WARN] $m" -ForegroundColor Yellow }
@@ -55,7 +55,7 @@ function New-Dirs {
     }
 }
 
-# ── Resolve the real (non-symlink) node.exe so the service path is stable ─────
+# -- Resolve the real (non-symlink) node.exe so the service path is stable -----
 function Get-NodeExe {
     $cmd = Get-Command node -ErrorAction SilentlyContinue
     if (-not $cmd) { throw "node not found on PATH. Run 'nvm use lts' first (see setup.ps1)." }
@@ -65,7 +65,7 @@ function Get-NodeExe {
     return $cmd.Source                              # fallback: whatever PATH resolved
 }
 
-# ── GitHub public release helpers (no auth — repo is public) ─────────────────
+# -- GitHub public release helpers (no auth - repo is public) -----------------
 function Get-LatestRelease {
     $url = "https://api.github.com/repos/$($SG.Repo)/releases/latest"
     $headers = @{ 'User-Agent' = 'shahgrid-deploy'; 'Accept' = 'application/vnd.github+json' }
@@ -94,7 +94,7 @@ function Expand-Zip([string]$zip, [string]$dest) {
     Expand-Archive -Path $zip -DestinationPath $dest -Force
 }
 
-# ── `current` junction management (solves "host folder changes per release") ──
+# -- `current` junction management (solves "host folder changes per release") --
 function Set-CurrentJunction([string]$targetReleaseDir) {
     if (Test-Path $SG.Current) {
         # Remove existing junction without touching its target contents.
@@ -113,7 +113,7 @@ function Set-StateValue([string]$name, [string]$value) {
     Set-Content -Path (Join-Path $SG.State "$name.txt") -Value $value -NoNewline
 }
 
-# ── Service helpers ──────────────────────────────────────────────────────────
+# -- Service helpers ----------------------------------------------------------
 function Test-ServiceExists([string]$name) {
     return [bool](Get-Service -Name $name -ErrorAction SilentlyContinue)
 }
@@ -137,7 +137,7 @@ function Install-NssmService {
     & $nssm set $Name AppRotateFiles 1 | Out-Null
     & $nssm set $Name AppRotateBytes 10485760 | Out-Null
     & $nssm set $Name Start SERVICE_AUTO_START | Out-Null
-    # Restart on crash (no human, no login required — LocalSystem).
+    # Restart on crash (no human, no login required - LocalSystem).
     & $nssm set $Name AppExit Default Restart | Out-Null
     & $nssm set $Name AppRestartDelay 5000 | Out-Null
     Write-Ok "service '$Name' installed (auto-start, restart-on-crash)"
@@ -150,7 +150,7 @@ function Restart-Svc([string]$name) {
     } else { Write-Warn "service $name not installed yet" }
 }
 
-# ── Health probe ─────────────────────────────────────────────────────────────
+# -- Health probe -------------------------------------------------------------
 function Test-Health([int]$retries = 10, [int]$delaySec = 3) {
     $url = "https://$($SG.Domain)/health"
     for ($i = 1; $i -le $retries; $i++) {

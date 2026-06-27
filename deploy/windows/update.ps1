@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Pull the latest ShahGrid release from GitHub and activate it.
 
@@ -76,7 +76,7 @@ New-Item -ItemType Directory -Path $releaseDir, $tmp -Force | Out-Null
 $doBackend  = -not $FrontendOnly
 $doFrontend = -not $BackendOnly
 
-# ── Backend ──────────────────────────────────────────────────────────────────
+# -- Backend ------------------------------------------------------------------
 if ($doBackend) {
     Write-Step "Fetching backend"
     $a = Find-Asset $rel.Assets 'backend-'
@@ -91,7 +91,7 @@ if ($doBackend) {
     Write-Ok "copied backend from active release"
 }
 
-# ── Frontend ─────────────────────────────────────────────────────────────────
+# -- Frontend -----------------------------------------------------------------
 if ($doFrontend) {
     Write-Step "Fetching frontend"
     $a = Find-Asset $rel.Assets 'frontend-'
@@ -107,7 +107,7 @@ if ($doFrontend) {
     Write-Ok "copied frontend from active release"
 }
 
-# ── Activate ─────────────────────────────────────────────────────────────────
+# -- Activate -----------------------------------------------------------------
 Write-Step "Activating $tagName"
 $prevTarget = $null
 if (Test-Path $SG.Current) {
@@ -122,9 +122,9 @@ Write-Step "Verifying"
 if (Test-Health) {
     if ($activeTag) { Set-StateValue 'previous_tag' $activeTag }
     Set-StateValue 'current_tag' $tagName
-    Write-Ok "deploy OK — $($SG.Domain) healthy on $tagName"
+    Write-Ok "deploy OK - $($SG.Domain) healthy on $tagName"
 } else {
-    Write-Err "health check failed — rolling back"
+    Write-Err "health check failed - rolling back"
     if ($prevTarget) {
         Set-CurrentJunction $prevTarget
         Restart-Svc $SG.Svc.Backend

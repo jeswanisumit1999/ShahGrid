@@ -1,6 +1,6 @@
-<#
+﻿<#
 .SYNOPSIS
-  One-time ShahGrid server bootstrap (Windows, native — no Docker, no nginx).
+  One-time ShahGrid server bootstrap (Windows, native - no Docker, no nginx).
 
 .DESCRIPTION
   Idempotent. Safe to re-run. Steps:
@@ -37,7 +37,7 @@ New-Dirs
 
 $ScriptDir = $PSScriptRoot   # repo deploy\windows (source of config templates)
 
-# ── 1. Preflight ─────────────────────────────────────────────────────────────
+# -- 1. Preflight -------------------------------------------------------------
 Write-Step "Preflight checks"
 $fatal = @()
 if (-not (Test-Path $SG.NvmHome))  { $fatal += "nvm not found at $($SG.NvmHome)" }
@@ -53,9 +53,9 @@ Write-Ok "required binaries present"
 try {
     $ips = [System.Net.Dns]::GetHostAddresses($SG.Domain) | ForEach-Object { $_.IPAddressToString }
     Write-Info "$($SG.Domain) resolves to: $($ips -join ', ')"
-} catch { Write-Warn "could not resolve $($SG.Domain) — DNS must point at this server for TLS to issue." }
+} catch { Write-Warn "could not resolve $($SG.Domain) - DNS must point at this server for TLS to issue." }
 
-# ── 2. Tooling: node (nvm) + NSSM ────────────────────────────────────────────
+# -- 2. Tooling: node (nvm) + NSSM --------------------------------------------
 Write-Step "Node via nvm (LTS)"
 $nvm = Join-Path $SG.NvmHome 'nvm.exe'
 & $nvm install lts | Write-Info
@@ -77,28 +77,28 @@ if (-not (Test-Path $SG.NssmExe)) {
 }
 Write-Ok "nssm: $($SG.NssmExe)"
 
-# ── 3. Config files into shared\ ─────────────────────────────────────────────
+# -- 3. Config files into shared\ ---------------------------------------------
 Write-Step "Config"
 Copy-Item (Join-Path $ScriptDir 'Caddyfile')     (Join-Path $SG.Shared 'Caddyfile')     -Force
 Copy-Item (Join-Path $ScriptDir 'pgbouncer.ini') (Join-Path $SG.Shared 'pgbouncer.ini') -Force
 Write-Ok "Caddyfile + pgbouncer.ini copied to $($SG.Shared)"
 
-# userlist.txt (plaintext password — restrict ACL to SYSTEM/Administrators).
+# userlist.txt (plaintext password - restrict ACL to SYSTEM/Administrators).
 $userlist = Join-Path $SG.Shared 'userlist.txt'
 Set-Content -Path $userlist -Value "`"shahgrid`" `"$DbPassword`"" -NoNewline
 icacls $userlist /inheritance:r /grant:r "SYSTEM:F" "Administrators:F" | Out-Null
 Write-Ok "userlist.txt written + locked down"
 
-# .env — keep an existing one (it has real secrets); otherwise seed from example.
+# .env - keep an existing one (it has real secrets); otherwise seed from example.
 $envFile = Join-Path $SG.Shared '.env'
 if (-not (Test-Path $envFile)) {
     Copy-Item (Join-Path $ScriptDir 'env.server.example') $envFile -Force
-    Write-Warn ".env created from template at $envFile — EDIT IT and fill JWT/Google secrets, then re-run."
+    Write-Warn ".env created from template at $envFile - EDIT IT and fill JWT/Google secrets, then re-run."
 } else {
     Write-Ok ".env already present (left untouched)"
 }
 
-# ── 4. Postgres: role + db + localhost lockdown ──────────────────────────────
+# -- 4. Postgres: role + db + localhost lockdown ------------------------------
 Write-Step "Postgres"
 $psql = Join-Path $SG.PgBin 'psql.exe'
 $pgSvc = (Get-Service -Name 'postgresql*' -ErrorAction SilentlyContinue | Select-Object -First 1)
@@ -127,7 +127,7 @@ Remove-Item Env:\PGPASSWORD
 Restart-Service -Name $pgSvc.Name -Force
 Write-Ok "Postgres bound to localhost + restarted ($($pgSvc.Name))"
 
-# ── 5. pgBouncer service ─────────────────────────────────────────────────────
+# -- 5. pgBouncer service -----------------------------------------------------
 Write-Step "pgBouncer service"
 $pgBouncerIni = Join-Path $SG.Shared 'pgbouncer.ini'
 Install-NssmService -Name $SG.Svc.PgBouncer -Exe $SG.PgBouncerExe `
@@ -136,7 +136,7 @@ Install-NssmService -Name $SG.Svc.PgBouncer -Exe $SG.PgBouncerExe `
 Start-Service $SG.Svc.PgBouncer
 Write-Ok "pgBouncer up on 127.0.0.1:$($SG.PgBouncerPort)"
 
-# ── 6. First release pull + junction ─────────────────────────────────────────
+# -- 6. First release pull + junction -----------------------------------------
 Write-Step "First release"
 $rel = Get-LatestRelease
 $tagName = $rel.Tag
@@ -157,7 +157,7 @@ Initialize-Backend $beDir
 Set-CurrentJunction $releaseDir
 Set-StateValue 'current_tag' $tagName
 
-# ── 7. Backend + Caddy services ──────────────────────────────────────────────
+# -- 7. Backend + Caddy services ----------------------------------------------
 Write-Step "App services"
 Install-NssmService -Name $SG.Svc.Backend -Exe $nodeExe -Args 'dist\server.js' `
     -WorkDir (Join-Path $SG.Current 'backend') `
@@ -170,7 +170,7 @@ Install-NssmService -Name $SG.Svc.Caddy -Exe $SG.CaddyExe `
     -StdoutLog (Join-Path $SG.Logs 'caddy.out.log') -StderrLog (Join-Path $SG.Logs 'caddy.err.log')
 Start-Service $SG.Svc.Caddy
 
-# ── 8. Firewall + verification ───────────────────────────────────────────────
+# -- 8. Firewall + verification -----------------------------------------------
 Write-Step "Firewall"
 foreach ($p in 80, 443) {
     if (-not (Get-NetFirewallRule -DisplayName "ShahGrid HTTP $p" -ErrorAction SilentlyContinue)) {
@@ -219,5 +219,5 @@ Write-Host ""
 if ($allOk) {
     Write-Ok "ShahGrid is live: https://$($SG.Domain)  (release $tagName)"
 } else {
-    Write-Err "Some checks failed. See logs in $($SG.Logs). First TLS issuance can take ~1 min — re-run Verification if only the https checks failed."
+    Write-Err "Some checks failed. See logs in $($SG.Logs). First TLS issuance can take ~1 min - re-run Verification if only the https checks failed."
 }

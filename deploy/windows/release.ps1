@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Build ShahGrid frontend + backend on your LOCAL machine and publish a GitHub
   Release that the server's update.ps1 / setup.ps1 will pull.
@@ -52,7 +52,7 @@ New-Item -ItemType Directory -Path $OutDir | Out-Null
 
 $assets = @()
 
-# ── Frontend ─────────────────────────────────────────────────────────────────
+# -- Frontend -----------------------------------------------------------------
 if (-not $SkipFrontend) {
     Step "Flutter web build (API_BASE_URL=$ApiBaseUrl)"
     Push-Location $FrontendDir
@@ -68,7 +68,7 @@ if (-not $SkipFrontend) {
     Write-Host "  built $feZip" -ForegroundColor Green
 }
 
-# ── Backend ──────────────────────────────────────────────────────────────────
+# -- Backend ------------------------------------------------------------------
 if (-not $SkipBackend) {
     Step "Backend build (tsc)"
     Push-Location $BackendDir
@@ -95,7 +95,7 @@ if (-not $SkipBackend) {
 
 if (-not $assets.Count) { throw "Nothing built (both sides skipped)." }
 
-# ── Publish GitHub Release ───────────────────────────────────────────────────
+# -- Publish GitHub Release ---------------------------------------------------
 Step "Publishing GitHub release $Tag"
 $gh = Get-Command gh -ErrorAction SilentlyContinue
 if (-not $gh) { throw "GitHub CLI 'gh' not found. Install it and 'gh auth login'." }
