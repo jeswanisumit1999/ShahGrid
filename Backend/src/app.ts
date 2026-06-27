@@ -28,6 +28,10 @@ import directSalesRoutes from './modules/direct-sales/direct-sales.routes';
 
 const app = express();
 
+// Behind the Caddy reverse proxy: trust the first proxy hop so req.ip and the
+// X-Forwarded-* headers reflect the real client (correct rate-limit keys + logs).
+app.set('trust proxy', 1);
+
 // ── Swagger UI ────────────────────────────────────────────────────────────────
 // Mounted BEFORE helmet so the UI's inline scripts/styles are not blocked by CSP.
 // Available at /api-docs (all environments).
@@ -63,10 +67,13 @@ app.use(
 );
 
 // ── Rate limiting ─────────────────────────────────────────────────────────────
+// Secondary, in-app safety net. The primary edge limit (500 req/min/IP) is
+// enforced by Caddy (caddy-ratelimit). Keep this window/limit looser than the
+// edge so Caddy is always the gate that trips first under normal load.
 app.use(
   rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 600,
+    windowMs: 60 * 1000,
+    max: 1000,
     standardHeaders: true,
     legacyHeaders: false,
     message: { success: false, error: { code: 'RATE_LIMITED', message: 'Too many requests' } },

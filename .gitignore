@@ -65,3 +65,10 @@ prompt.txt
 *.pem
 *.p12
 *.p8
+
+# ─── Deploy build artifacts (release.ps1 output) ──────────────────────────────
+.release/
+
+pnpm-*.yaml
+pubspec.lock
+Prod env.md
