@@ -138,6 +138,9 @@ Write-Ok "pgBouncer up on 127.0.0.1:$($SG.PgBouncerPort)"
 
 # -- 6. First release pull + junction -----------------------------------------
 Write-Step "First release"
+if (Test-ServiceExists $SG.Svc.Backend) { Stop-Service -Name $SG.Svc.Backend -Force -ErrorAction SilentlyContinue }
+if (Test-ServiceExists $SG.Svc.Caddy) { Stop-Service -Name $SG.Svc.Caddy -Force -ErrorAction SilentlyContinue }
+
 $rel = Get-LatestRelease
 $tagName = $rel.Tag
 Write-Ok "latest release: $tagName"
