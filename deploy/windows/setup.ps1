@@ -65,7 +65,8 @@ $env:Path = $SG.NvmHome + ";" + $env:Path
 $nodeExe = Get-NodeExe
 # Put the resolved node dir (where npm.cmd/npx.cmd also live) first on PATH.
 $env:Path = (Split-Path $nodeExe) + ";" + $env:Path
-Write-Ok "node: $nodeExe ($(& node -v))"
+$nodeVer = & $nodeExe -v
+Write-Ok "node: $nodeExe ($nodeVer)"
 
 Write-Step "NSSM"
 if (-not (Test-Path $SG.NssmExe)) {
@@ -128,8 +129,9 @@ Write-Ok "Postgres bound to localhost + restarted ($($pgSvc.Name))"
 
 # ── 5. pgBouncer service ─────────────────────────────────────────────────────
 Write-Step "pgBouncer service"
+$pgBouncerIni = Join-Path $SG.Shared 'pgbouncer.ini'
 Install-NssmService -Name $SG.Svc.PgBouncer -Exe $SG.PgBouncerExe `
-    -Args "`"$(Join-Path $SG.Shared 'pgbouncer.ini')`"" -WorkDir $SG.Shared `
+    -Args "`"$pgBouncerIni`"" -WorkDir $SG.Shared `
     -StdoutLog (Join-Path $SG.Logs 'pgbouncer.out.log') -StderrLog (Join-Path $SG.Logs 'pgbouncer.err.log')
 Start-Service $SG.Svc.PgBouncer
 Write-Ok "pgBouncer up on 127.0.0.1:$($SG.PgBouncerPort)"
@@ -162,8 +164,9 @@ Install-NssmService -Name $SG.Svc.Backend -Exe $nodeExe -Args 'dist\server.js' `
     -StdoutLog (Join-Path $SG.Logs 'backend.out.log') -StderrLog (Join-Path $SG.Logs 'backend.err.log')
 Start-Service $SG.Svc.Backend
 
+$caddyFile = Join-Path $SG.Shared 'Caddyfile'
 Install-NssmService -Name $SG.Svc.Caddy -Exe $SG.CaddyExe `
-    -Args "run --config `"$(Join-Path $SG.Shared 'Caddyfile')`" --adapter caddyfile" -WorkDir $SG.Shared `
+    -Args "run --config `"$caddyFile`" --adapter caddyfile" -WorkDir $SG.Shared `
     -StdoutLog (Join-Path $SG.Logs 'caddy.out.log') -StderrLog (Join-Path $SG.Logs 'caddy.err.log')
 Start-Service $SG.Svc.Caddy
 
