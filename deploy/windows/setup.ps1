@@ -85,7 +85,7 @@ Write-Ok "Caddyfile + pgbouncer.ini copied to $($SG.Shared)"
 
 # userlist.txt (plaintext password - restrict ACL to SYSTEM/Administrators).
 $userlist = Join-Path $SG.Shared 'userlist.txt'
-Set-Content -Path $userlist -Value "`"shahgrid`" `"$DbPassword`"" -NoNewline
+Set-Content -Path $userlist -Value "`"shahgrid`" `"$DbPassword`""
 icacls $userlist /inheritance:r /grant:r "SYSTEM:F" "Administrators:F" | Out-Null
 Write-Ok "userlist.txt written + locked down"
 
