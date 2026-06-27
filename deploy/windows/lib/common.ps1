@@ -127,6 +127,12 @@ function Install-NssmService {
     if (-not (Test-Path $nssm)) { throw "nssm.exe missing at $nssm" }
     if (Test-ServiceExists $Name) {
         & $nssm stop $Name confirm 2>$null | Out-Null
+        
+        # If it's pgbouncer, forcefully kill any zombie instances tying up port 6432
+        if ($Name -eq $SG.Svc.PgBouncer) {
+            Stop-Process -Name "pgbouncer" -Force -ErrorAction SilentlyContinue
+        }
+
         & $nssm remove $Name confirm | Out-Null
         Start-Sleep -Milliseconds 500
     }
