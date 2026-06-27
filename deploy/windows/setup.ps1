@@ -131,7 +131,7 @@ Write-Ok "Postgres bound to localhost + restarted ($($pgSvc.Name))"
 Write-Step "pgBouncer service"
 $pgBouncerIni = Join-Path $SG.Shared 'pgbouncer.ini'
 Install-NssmService -Name $SG.Svc.PgBouncer -Exe $SG.PgBouncerExe `
-    -Args "`"$pgBouncerIni`"" -WorkDir $SG.Shared `
+    -Args "pgbouncer.ini" -WorkDir $SG.Shared `
     -StdoutLog (Join-Path $SG.Logs 'pgbouncer.out.log') -StderrLog (Join-Path $SG.Logs 'pgbouncer.err.log')
 Start-Service $SG.Svc.PgBouncer
 Write-Ok "pgBouncer up on 127.0.0.1:$($SG.PgBouncerPort)"
@@ -166,7 +166,7 @@ Start-Service $SG.Svc.Backend
 
 $caddyFile = Join-Path $SG.Shared 'Caddyfile'
 Install-NssmService -Name $SG.Svc.Caddy -Exe $SG.CaddyExe `
-    -Args "run --config `"$caddyFile`" --adapter caddyfile" -WorkDir $SG.Shared `
+    -Args "run --config Caddyfile --adapter caddyfile" -WorkDir $SG.Shared `
     -StdoutLog (Join-Path $SG.Logs 'caddy.out.log') -StderrLog (Join-Path $SG.Logs 'caddy.err.log')
 Start-Service $SG.Svc.Caddy
 
