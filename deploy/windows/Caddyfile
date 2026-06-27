@@ -1,0 +1,56 @@
+# ShahGrid — Caddy config (Windows, native, no Docker/nginx)
+# Requires the custom Caddy build with the caddy-ratelimit module:
+#   E:\apps\Caddy\caddy_windows_amd64_custom.exe
+# Run via NSSM service "shahgrid-caddy":
+#   caddy run --config E:\apps\shahgrid\shared\Caddyfile --adapter caddyfile
+#
+# Caddy automatically obtains AND auto-renews the Let's Encrypt certificate for
+# the site below — no certbot. Ports 80 (ACME/redirect) and 443 must be open
+# and app.shahgrid.com must resolve to this server's public IP.
+
+{
+	# ACME account email (used for cert expiry notices).
+	email deluxtilesdt@gmail.com
+
+	# caddy-ratelimit is not a standard directive, so its order must be declared.
+	order rate_limit before reverse_proxy
+}
+
+app.shahgrid.com {
+	encode zstd gzip
+
+	# ── Edge rate limit: 500 requests / minute / client IP ──────────────────
+	rate_limit {
+		zone per_ip {
+			key    {remote_host}
+			events 500
+			window 1m
+		}
+	}
+
+	# ── API + backend-served paths → Node/Express on 127.0.0.1:3000 ─────────
+	@backend path /api/* /health /api-docs /api-docs/* /api-docs.json
+	handle @backend {
+		reverse_proxy 127.0.0.1:3000 {
+			header_up Host {host}
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote}
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+
+	# ── Everything else → Flutter web build (static SPA) ────────────────────
+	# Path uses the `current` junction so it never points at a fixed release.
+	handle {
+		root * E:/apps/shahgrid/current/frontend/web
+		try_files {path} /index.html
+		file_server
+	}
+
+	log {
+		output file E:/apps/shahgrid/logs/caddy.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+	}
+}

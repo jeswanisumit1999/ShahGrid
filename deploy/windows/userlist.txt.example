@@ -1,0 +1,4 @@
+; pgBouncer userlist — copy to E:\apps\shahgrid\shared\userlist.txt
+; Format: "username" "password"  (plaintext is fine with auth_type=scram-sha-256)
+; setup.ps1 writes the real file from the password in your .env / parameters.
+"shahgrid" "REPLACE_WITH_DB_PASSWORD"
