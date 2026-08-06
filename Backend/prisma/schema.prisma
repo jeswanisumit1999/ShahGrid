@@ -109,7 +109,7 @@ model DeviceToken {
 model Retailer {
   id                    String   @id @default(uuid()) @db.Uuid
   name                  String   @db.VarChar(255)
-  phone                 String   @unique @db.VarChar(20)
+  phone                 String   @db.VarChar(20)
   address               String?  @db.VarChar(512)
   gstin                 String?  @db.VarChar(15)
   creditLimit           Decimal  @default(0) @map("credit_limit") @db.Decimal(12, 2)

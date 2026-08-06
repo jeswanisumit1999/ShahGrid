@@ -362,16 +362,9 @@ export async function importRetailers(buffer: Buffer): Promise<ImportResult> {
       // Active retailer already exists — skip
       if (existing?.isActive) { skipped++; continue; }
 
-      // Use real phone if provided; otherwise generate a placeholder
-      let phone = row.phone;
-      if (!phone) {
-        for (let attempt = 0; attempt < 10; attempt++) {
-          const candidate = `IMPORT-${String(counter++).padStart(4, '0')}`;
-          const taken = await prisma.retailer.findUnique({ where: { phone: candidate }, select: { id: true } });
-          if (!taken) { phone = candidate; break; }
-        }
-        if (!phone) { errors.push(`${row.name}: could not assign placeholder phone`); continue; }
-      }
+      // Normalise phone: strip all whitespace (phone is no longer unique)
+      const phone = row.phone.replace(/\s+/g, '').replace(/[^\d+]/g, '')
+        || `IMPORT-${String(counter++).padStart(4, '0')}`;
 
       // Debit → positive pendingCollection; Credit → negative pendingCollection
       const pending = row.debit > 0
