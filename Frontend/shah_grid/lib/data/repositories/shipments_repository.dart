@@ -55,6 +55,7 @@ class ShipmentsRepository {
     String? notes,
     List<ItemAdjustment>? adjustments,
     bool force = false,
+    List<Map<String, dynamic>>? returnItems,
   }) async {
     final response = await _dio.patch(ApiConstants.shipmentStatus(id), data: {
       'status': status,
@@ -62,6 +63,7 @@ class ShipmentsRepository {
       if (adjustments != null && adjustments.isNotEmpty)
         'adjustments': adjustments.map((a) => a.toJson()).toList(),
       if (force) 'force': true,
+      if (returnItems != null && returnItems.isNotEmpty) 'returnItems': returnItems,
     });
     return ShipmentModel.fromJson(unwrap<Map<String, dynamic>>(response));
   }

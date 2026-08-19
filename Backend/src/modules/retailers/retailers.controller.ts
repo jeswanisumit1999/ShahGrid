@@ -103,6 +103,16 @@ export async function getRetailerLedgerPdf(req: Request, res: Response, next: Ne
   } catch (err) { next(err); }
 }
 
+export async function addManualPending(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { amount, type, notes } = req.body;
+    const result = await retailersService.addManualPending(
+      req.params.id, amount, type, notes, req.user!.id,
+    );
+    sendSuccess(res, result);
+  } catch (err) { next(err); }
+}
+
 export async function importRetailers(req: Request, res: Response, next: NextFunction) {
   try {
     const file = (req as any).file as { buffer: Buffer } | undefined;

@@ -120,6 +120,51 @@ export async function createRetailer(
   });
 }
 
+export async function addManualPending(
+  retailerId: string,
+  amount: number,
+  type: 'debit' | 'credit',
+  notes: string | undefined,
+  actorId: string
+) {
+  return prisma.$transaction(async (tx) => {
+    const retailer = await tx.retailer.findUnique({ where: { id: retailerId } });
+    if (!retailer) throw AppError.notFound('Retailer');
+
+    const delta    = type === 'debit' ? amount : -amount;
+    const newBal   = Number(retailer.pendingCollection) + delta;
+    const deltaDec = new Prisma.Decimal(delta.toFixed(2));
+    const balDec   = new Prisma.Decimal(newBal.toFixed(2));
+
+    const updated = await tx.retailer.update({
+      where: { id: retailerId },
+      data:  { pendingCollection: balDec },
+    });
+
+    await tx.retailerLedger.create({
+      data: {
+        retailerId,
+        delta:         deltaDec,
+        balanceAfter:  balDec,
+        type:          type === 'debit' ? 'manual_debit' : 'manual_credit',
+        referenceType: 'manual',
+        notes:         notes || null,
+        actorId,
+      },
+    });
+
+    await writeAuditLog(tx, {
+      actorId,
+      action:     'manual_pending_adjustment',
+      entityType: 'Retailer',
+      entityId:   retailerId,
+      diff:       { delta, newBalance: newBal, type, notes },
+    });
+
+    return updated;
+  });
+}
+
 export async function deleteRetailer(id: string, actorId: string) {
   const retailer = await prisma.retailer.findUnique({ where: { id } });
   if (!retailer) throw AppError.notFound('Retailer');
@@ -269,15 +314,15 @@ export async function generateRetailerLedgerPdf(retailerId: string): Promise<Buf
 
 // ── XLS Import ────────────────────────────────────────────────────────────────
 
+interface CompanyAmount { companyName: string; debit: number; credit: number; }
 interface ImportRow {
   name: string;
   phone: string;
   address: string;
   gstin: string;
   creditLimit: number;
-  debit: number;
-  credit: number;
   salesOfficerEmail: string;
+  companyAmounts: CompanyAmount[]; // one entry per company column-pair in the sheet
 }
 export interface ImportResult { created: number; skipped: number; errors: string[]; }
 
@@ -286,9 +331,21 @@ function parseImportBuffer(buffer: Buffer): ImportRow[] {
   const ws = wb.Sheets[wb.SheetNames[0]];
   const rows: unknown[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
-  // Row 1: Name | Phone Number | Address | GSTIN | Credit Limit | "Existing Pending Amount" (merged) | Sale Officer
-  // Row 2: (empty cols) | Debit | Credit | (empty)
-  // Row 3+: data
+  // ── Locate structural rows ────────────────────────────────────────────────
+  //
+  // Supported layouts (both detected automatically):
+  //
+  //   Multi-company (new):
+  //     Row 0  — company names in merged cells  (Shah Trading Co. | Delux Tiles …)
+  //     Row 1  — base headers                   (Name | Phone | … | Existing Pending Amount | … | Sale Officer)
+  //     Row 2  — debit/credit sub-headers        (Debit | Credit | Debit | Credit …)
+  //     Row 3+ — data
+  //
+  //   Single-company (legacy):
+  //     Row 0  — base headers                   (Name | Phone | … | Existing Pending Amount | Sale Officer)
+  //     Row 1  — debit/credit sub-headers        (Debit | Credit)
+  //     Row 2+ — data
+
   const headerIdx = rows.findIndex(r =>
     r.map(c => String(c).trim().toLowerCase()).includes('name')
   );
@@ -296,6 +353,7 @@ function parseImportBuffer(buffer: Buffer): ImportRow[] {
 
   const col = (arr: string[], keyword: string) => arr.findIndex(c => c.includes(keyword));
 
+  // Base column positions (from headerIdx row)
   const hdr = rows[headerIdx].map(c => String(c).trim().toLowerCase());
   const nameCol         = col(hdr, 'name');
   const phoneCol        = col(hdr, 'phone');
@@ -304,27 +362,73 @@ function parseImportBuffer(buffer: Buffer): ImportRow[] {
   const creditLimitCol  = col(hdr, 'credit limit');
   const salesOfficerCol = col(hdr, 'sale officer') !== -1 ? col(hdr, 'sale officer') : col(hdr, 'sales officer');
 
-  // Debit/Credit are sub-headers in the row immediately after (under merged "Existing Pending Amount")
-  const subHdr   = (rows[headerIdx + 1] ?? []).map(c => String(c).trim().toLowerCase());
-  const debitCol  = col(subHdr, 'debit');
-  const creditCol = col(subHdr, 'credit');
+  // Search for the "Debit" sub-header in the rows immediately following headerIdx.
+  // Handles layouts with 1 or 2 intermediate rows before the Debit/Credit row
+  // (e.g. "Existing Pending Amount" label row between the main header and Debit/Credit).
+  let subHdrIdx = -1;
+  for (let i = headerIdx + 1; i <= Math.min(headerIdx + 5, rows.length - 1); i++) {
+    const r = (rows[i] ?? []).map(c => String(c).trim().toLowerCase());
+    if (r.some(c => c === 'debit')) { subHdrIdx = i; break; }
+  }
+  if (subHdrIdx === -1) throw AppError.badRequest('No "Debit" sub-header found in the file.');
 
-  if (debitCol === -1) throw AppError.badRequest('No "Debit" sub-header found in the file.');
+  const subHdr = (rows[subHdrIdx] ?? []).map(c => String(c).trim().toLowerCase());
 
+  // Collect all debit column indices; each one starts a company column-pair
+  const debitCols: number[] = subHdr.reduce<number[]>((acc, cell, i) => {
+    if (cell === 'debit') acc.push(i);
+    return acc;
+  }, []);
+
+  // Company names: scan every row from headerIdx up to (not including) subHdrIdx.
+  // The company name for a given debit column is the first non-standard, non-empty
+  // value found at that column position across those rows.
+  const skipKeywords = ['name', 'phone', 'address', 'gstin', 'credit', 'debit', 'sale',
+                        'officer', 'existing', 'pending', 'amount', 'limit'];
+
+  function findCompanyName(debitCol: number): string {
+    for (let r = headerIdx; r < subHdrIdx; r++) {
+      // Check the debit column and one column to the left (merged cells land on the first col)
+      for (const c of [debitCol, debitCol - 1]) {
+        const cell = String((rows[r] ?? [])[c] ?? '').trim();
+        if (cell && !skipKeywords.some(k => cell.toLowerCase().includes(k))) return cell;
+      }
+    }
+    return '';
+  }
+
+  // Build company-column map: for each debit col → { companyName, debitCol, creditCol }
+  const companyCols = debitCols.map((debitCol) => {
+    const creditCol  = subHdr.indexOf('credit', debitCol + 1); // next 'credit' after this debit
+    const companyName = findCompanyName(debitCol);
+    return { companyName, debitCol, creditCol };
+  });
+
+  // ── Parse data rows ───────────────────────────────────────────────────────
+  const dataStart = subHdrIdx + 1;
   const result: ImportRow[] = [];
-  for (let i = headerIdx + 2; i < rows.length; i++) {
+
+  for (let i = dataStart; i < rows.length; i++) {
     const row  = rows[i];
     const name = String(row[nameCol] ?? '').trim();
     if (!name) continue;
+
+    const companyAmounts: CompanyAmount[] = companyCols
+      .map(({ companyName, debitCol, creditCol }) => ({
+        companyName,
+        debit:  toNum(row[debitCol]),
+        credit: creditCol !== -1 ? toNum(row[creditCol]) : 0,
+      }))
+      .filter(c => c.debit !== 0 || c.credit !== 0);
+
     result.push({
       name,
       phone:             String(row[phoneCol] ?? '').trim(),
       address:           String(row[addressCol] ?? '').trim(),
       gstin:             String(row[gstinCol] ?? '').trim(),
       creditLimit:       toNum(creditLimitCol !== -1 ? row[creditLimitCol] : 0),
-      debit:             toNum(row[debitCol]),
-      credit:            creditCol !== -1 ? toNum(row[creditCol]) : 0,
       salesOfficerEmail: salesOfficerCol !== -1 ? String(row[salesOfficerCol] ?? '').trim() : '',
+      companyAmounts,
     });
   }
   return result;
@@ -342,7 +446,23 @@ export async function importRetailers(buffer: Buffer): Promise<ImportResult> {
   const errors: string[] = [];
   let counter = 1;
 
-  // Pre-load sales officer email → id map
+  // ── Pre-load / create companies ───────────────────────────────────────────
+  const companyNames = [
+    ...new Set(rows.flatMap(r => r.companyAmounts.map(c => c.companyName)).filter(Boolean)),
+  ];
+  const companyIdMap: Record<string, string> = {}; // lowerName → id
+  for (const name of companyNames) {
+    let company = await prisma.company.findFirst({
+      where: { name: { equals: name, mode: 'insensitive' } },
+      select: { id: true },
+    });
+    if (!company) {
+      company = await prisma.company.create({ data: { name }, select: { id: true } });
+    }
+    companyIdMap[name.toLowerCase()] = company.id;
+  }
+
+  // ── Pre-load sales officers ───────────────────────────────────────────────
   const emailSet = [...new Set(rows.map(r => r.salesOfficerEmail).filter(Boolean))];
   const salesOfficerMap: Record<string, string> = {};
   if (emailSet.length > 0) {
@@ -353,75 +473,82 @@ export async function importRetailers(buffer: Buffer): Promise<ImportResult> {
     for (const u of users) { salesOfficerMap[u.email.toLowerCase()] = u.id; }
   }
 
+  // ── Process each row ──────────────────────────────────────────────────────
   for (const row of rows) {
     try {
       const existing = await prisma.retailer.findFirst({
         where: { name: { equals: row.name, mode: 'insensitive' } },
         select: { id: true, isActive: true },
       });
-      // Active retailer already exists — skip
       if (existing?.isActive) { skipped++; continue; }
 
-      // Normalise phone: strip all whitespace (phone is no longer unique)
+      // Normalise phone
       const phone = row.phone.replace(/\s+/g, '').replace(/[^\d+]/g, '')
         || `IMPORT-${String(counter++).padStart(4, '0')}`;
 
-      // Debit → positive pendingCollection; Credit → negative pendingCollection
-      const pending = row.debit > 0
-        ? new Prisma.Decimal(row.debit.toFixed(2))
-        : row.credit > 0
-          ? new Prisma.Decimal((-row.credit).toFixed(2))
-          : new Prisma.Decimal(0);
+      // Total pendingCollection = sum of (debit − credit) across all companies
+      const totalNet = row.companyAmounts.reduce((sum, c) => sum + c.debit - c.credit, 0);
+      const totalPending = new Prisma.Decimal(totalNet.toFixed(2));
 
       await prisma.$transaction(async (tx) => {
-        // Reactivate a soft-deleted retailer if one exists, otherwise create fresh
+        // Create or reactivate retailer
         const retailer = existing
           ? await tx.retailer.update({
               where: { id: existing.id },
               data: {
-                isActive:         true,
-                phone:            phone || undefined,
-                address:          row.address || null,
-                gstin:            row.gstin || null,
-                creditLimit:      new Prisma.Decimal(row.creditLimit.toFixed(2)),
-                pendingCollection: pending,
+                isActive:          true,
+                phone:             phone || undefined,
+                address:           row.address || null,
+                gstin:             row.gstin || null,
+                creditLimit:       new Prisma.Decimal(row.creditLimit.toFixed(2)),
+                pendingCollection: totalPending,
               },
             })
           : await tx.retailer.create({
               data: {
-                name:             row.name,
+                name:              row.name,
                 phone,
-                address:          row.address || null,
-                gstin:            row.gstin || null,
-                creditLimit:      new Prisma.Decimal(row.creditLimit.toFixed(2)),
-                pendingCollection: pending,
+                address:           row.address || null,
+                gstin:             row.gstin || null,
+                creditLimit:       new Prisma.Decimal(row.creditLimit.toFixed(2)),
+                pendingCollection: totalPending,
               },
             });
 
-        if (row.debit > 0) {
+        // Per-company balance + ledger entries
+        for (const ca of row.companyAmounts) {
+          const companyId = ca.companyName ? companyIdMap[ca.companyName.toLowerCase()] : undefined;
+          const net = ca.debit - ca.credit;
+          const companyNet = new Prisma.Decimal(net.toFixed(2));
+
+          if (companyId) {
+            await tx.retailerCompanyBalance.upsert({
+              where: { retailerId_companyId: { retailerId: retailer.id, companyId } },
+              create: { retailerId: retailer.id, companyId, pendingAmount: companyNet },
+              update: { pendingAmount: companyNet },
+            });
+          }
+
+          const ledgerDelta = ca.debit > 0
+            ? new Prisma.Decimal(ca.debit.toFixed(2))
+            : new Prisma.Decimal((-ca.credit).toFixed(2));
+
           await tx.retailerLedger.create({
             data: {
               retailerId:    retailer.id,
-              delta:         pending,
-              balanceAfter:  pending,
-              type:          'opening_balance',
+              companyId:     companyId ?? null,
+              delta:         ledgerDelta,
+              balanceAfter:  companyNet,
+              type:          ca.debit > 0 ? 'opening_balance' : 'opening_credit',
               referenceType: 'import',
-              notes:         `Opening balance — debit: ${row.debit.toFixed(2)}`,
-            },
-          });
-        } else if (row.credit > 0) {
-          await tx.retailerLedger.create({
-            data: {
-              retailerId:    retailer.id,
-              delta:         pending,
-              balanceAfter:  pending,
-              type:          'opening_credit',
-              referenceType: 'import',
-              notes:         `Opening credit — credit: ${row.credit.toFixed(2)}`,
+              notes: ca.companyName
+                ? `${ca.companyName} — ${ca.debit > 0 ? `debit: ${ca.debit.toFixed(2)}` : `credit: ${ca.credit.toFixed(2)}`}`
+                : `Import — ${ca.debit > 0 ? `debit: ${ca.debit.toFixed(2)}` : `credit: ${ca.credit.toFixed(2)}`}`,
             },
           });
         }
 
+        // Sales officer assignment
         const officerId = row.salesOfficerEmail
           ? salesOfficerMap[row.salesOfficerEmail.toLowerCase()]
           : undefined;

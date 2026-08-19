@@ -53,6 +53,19 @@ class RetailersRepository {
     return RetailerModel.fromJson(unwrap<Map<String, dynamic>>(response));
   }
 
+  Future<void> addManualPending({
+    required String retailerId,
+    required double amount,
+    required String type, // 'debit' or 'credit'
+    String? notes,
+  }) async {
+    await _dio.post(ApiConstants.retailerPending(retailerId), data: {
+      'amount': amount,
+      'type': type,
+      if (notes != null && notes.isNotEmpty) 'notes': notes,
+    });
+  }
+
   Future<void> deleteRetailer(String id) async {
     await _dio.delete(ApiConstants.retailerById(id));
   }

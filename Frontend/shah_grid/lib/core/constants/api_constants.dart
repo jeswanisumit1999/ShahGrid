@@ -28,6 +28,7 @@ class ApiConstants {
   static const String retailersImport = '/retailers/import';
   static String retailerById(String id) => '/retailers/$id';
   static String retailerLedger(String id) => '/retailers/$id/ledger';
+  static String retailerPending(String id) => '/retailers/$id/pending';
   static String retailerLedgerPdf(String id) => '/retailers/$id/ledger/pdf';
 
   // Products
@@ -72,6 +73,7 @@ class ApiConstants {
   static const String myStats = '/analytics/my-stats';
   static const String stockAlerts = '/analytics/stock-alerts';
   static const String godownStats = '/analytics/godown-stats';
+  static const String collectionSummary = '/analytics/collection-summary';
 
   // Direct Sales
   static const String directSales = '/direct-sales';

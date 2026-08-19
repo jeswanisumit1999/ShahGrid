@@ -22,6 +22,12 @@ export const listRetailersQuerySchema = z.object({
   salesOfficerId: z.string().uuid().optional(),
 });
 
+export const manualPendingSchema = z.object({
+  amount: z.number().positive(),
+  type: z.enum(['debit', 'credit']),
+  notes: z.string().max(512).optional(),
+});
+
 export const retailerLedgerQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),

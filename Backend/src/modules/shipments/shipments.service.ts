@@ -34,6 +34,7 @@ function getAllowedNext(permissions: string[], currentStatus: string): string[] 
 }
 
 type ShipmentItemAdjustment = { shipmentItemId: string; actualQuantity: number };
+type ReturnItem = { shipmentItemId: string; quantity?: number };
 
 export async function updateShipmentStatus(
   shipmentId: string,
@@ -42,7 +43,8 @@ export async function updateShipmentStatus(
   actorId: string,
   actorPermissions: string[],
   adjustments?: ShipmentItemAdjustment[],
-  force?: boolean
+  force?: boolean,
+  returnItems?: ReturnItem[],
 ) {
   return prisma.$transaction(async (tx) => {
     const shipment = await tx.shipment.findUnique({
@@ -192,36 +194,59 @@ export async function updateShipmentStatus(
       }
     }
 
-    // ── Returned: restore all delivered stock, reduce order total ─────────────
+    // ── Returned: restore selected (or all) delivered stock ──────────────────
     if (newStatus === 'Returned') {
       updateData.returnedAt = new Date();
 
+      // Build a map of item id → qty to return.
+      // If returnItems is provided (partial return), use those quantities.
+      // Otherwise default to full return of all delivered items.
+      const returnMap = new Map<string, number>();
+      if (returnItems && returnItems.length > 0) {
+        for (const ri of returnItems) {
+          const item = shipment.shipmentItems.find((i) => i.id === ri.shipmentItemId);
+          if (!item || item.status !== 'delivered') continue;
+          returnMap.set(item.id, Math.min(ri.quantity ?? item.quantity, item.quantity));
+        }
+      } else {
+        for (const item of shipment.shipmentItems) {
+          if (item.status === 'delivered' && item.quantity > 0) {
+            returnMap.set(item.id, item.quantity);
+          }
+        }
+      }
+
       let returnedAmount = 0;
       for (const item of shipment.shipmentItems) {
-        if (item.status === 'delivered' && item.quantity > 0) {
-          const updated = await tx.product.update({
-            where: { id: item.orderItem.product.id },
-            data: { stockQuantity: { increment: item.quantity } },
-          });
-          await writeStockLedger(tx, {
-            productId: item.orderItem.product.id,
-            delta: item.quantity,
-            balanceAfter: updated.stockQuantity,
-            type: 'shipment_return_in',
-            referenceType: 'Shipment',
-            referenceId: shipmentId,
-            actorId,
-          });
-          await tx.shipmentItem.update({
-            where: { id: item.id },
-            data: { status: 'returned' },
-          });
-          await tx.orderItem.update({
-            where: { id: item.orderItemId },
-            data: { deliveredQuantity: { decrement: item.quantity } },
-          });
-          returnedAmount += item.quantity * Number(item.orderItem.unitPrice);
+        const returnQty = returnMap.get(item.id);
+        if (!returnQty || returnQty <= 0) continue;
+
+        const updated = await tx.product.update({
+          where: { id: item.orderItem.product.id },
+          data: { stockQuantity: { increment: returnQty } },
+        });
+        await writeStockLedger(tx, {
+          productId: item.orderItem.product.id,
+          delta: returnQty,
+          balanceAfter: updated.stockQuantity,
+          type: 'shipment_return_in',
+          referenceType: 'Shipment',
+          referenceId: shipmentId,
+          actorId,
+        });
+
+        // Full item returned → mark as returned; partial → reduce quantity only
+        if (returnQty >= item.quantity) {
+          await tx.shipmentItem.update({ where: { id: item.id }, data: { status: 'returned' } });
+        } else {
+          await tx.shipmentItem.update({ where: { id: item.id }, data: { quantity: item.quantity - returnQty } });
         }
+
+        await tx.orderItem.update({
+          where: { id: item.orderItemId },
+          data: { deliveredQuantity: { decrement: returnQty } },
+        });
+        returnedAmount += returnQty * Number(item.orderItem.unitPrice);
       }
 
       if (returnedAmount > 0) {

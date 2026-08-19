@@ -95,6 +95,7 @@ router.get('/my-stats', controller.getMyStats);
  */
 router.get('/stock-alerts', controller.getStockAlerts);
 
+router.get('/collection-summary', requirePermission('analytics', 'read'), controller.getCollectionSummary);
 router.get('/godown-stats', requirePermission('shipments', 'view'), controller.getGodownStats);
 
 export default router;

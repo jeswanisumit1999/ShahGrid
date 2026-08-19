@@ -54,6 +54,50 @@ export async function getStockAlerts() {
   return products.filter((p) => p.stockQuantity <= p.lowStockThreshold!).slice(0, 50);
 }
 
+export async function getCollectionSummary() {
+  const officers = await prisma.user.findMany({
+    where: {
+      isActive: true,
+      userRoles: { some: { role: { name: 'Sales Officer' } } },
+    },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      avatarUrl: true,
+      assignedRetailers: {
+        where: { retailer: { isActive: true } },
+        select: {
+          retailer: {
+            select: { id: true, name: true, phone: true, pendingCollection: true },
+          },
+        },
+      },
+    },
+    orderBy: { name: 'asc' },
+  });
+
+  return officers.map((officer) => {
+    const retailers = officer.assignedRetailers.map((r) => ({
+      id: r.retailer.id,
+      name: r.retailer.name,
+      phone: r.retailer.phone,
+      pendingCollection: Number(r.retailer.pendingCollection),
+    }));
+    const totalPending = retailers.reduce((sum, r) => sum + r.pendingCollection, 0);
+    return {
+      salesOfficer: {
+        id: officer.id,
+        name: officer.name,
+        email: officer.email,
+        avatarUrl: officer.avatarUrl,
+      },
+      totalPending,
+      retailers,
+    };
+  });
+}
+
 export async function getGodownStats() {
   const [pendingAvailability, pendingVerification, readyForDispatch] = await Promise.all([
     prisma.shipment.count({ where: { status: 'Pending Stock Availability' } }),

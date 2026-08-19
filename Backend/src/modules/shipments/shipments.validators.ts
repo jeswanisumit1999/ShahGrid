@@ -16,12 +16,12 @@ export const updateShipmentStatusSchema = z.object({
   force: z.boolean().optional(),
   // Per-item quantity adjustments — only honoured when transitioning to Delivered
   adjustments: z
-    .array(
-      z.object({
-        shipmentItemId: z.string().uuid(),
-        actualQuantity: z.number().int().min(0),
-      })
-    )
+    .array(z.object({ shipmentItemId: z.string().uuid(), actualQuantity: z.number().int().min(0) }))
+    .optional(),
+  // Subset of items to return — only honoured when transitioning to Returned.
+  // Omit (or send empty) to return all delivered items.
+  returnItems: z
+    .array(z.object({ shipmentItemId: z.string().uuid(), quantity: z.number().int().min(1).optional() }))
     .optional(),
 });
 

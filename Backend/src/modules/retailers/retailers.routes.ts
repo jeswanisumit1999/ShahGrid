@@ -4,7 +4,7 @@ import * as controller from './retailers.controller';
 import { authenticate } from '../../middleware/auth.middleware';
 import { requirePermission } from '../../middleware/rbac.middleware';
 import { validate } from '../../middleware/validate.middleware';
-import { createRetailerSchema, updateRetailerSchema, listRetailersQuerySchema, retailerLedgerQuerySchema } from './retailers.validators';
+import { createRetailerSchema, updateRetailerSchema, listRetailersQuerySchema, retailerLedgerQuerySchema, manualPendingSchema } from './retailers.validators';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -144,6 +144,7 @@ router.post('/', requirePermission('retailers', 'manage'), validate(createRetail
  *         $ref: '#/components/responses/NotFound'
  */
 router.patch('/:id', requirePermission('retailers', 'manage'), validate(updateRetailerSchema), controller.updateRetailer);
+router.post('/:id/pending', requirePermission('retailers', 'manage'), validate(manualPendingSchema), controller.addManualPending);
 router.delete('/:id', requirePermission('retailers', 'manage'), controller.deleteRetailer);
 
 export default router;

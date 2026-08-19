@@ -28,6 +28,7 @@ export async function updateStatus(req: Request, res: Response, next: NextFuncti
       req.user!.permissions,
       req.body.adjustments,
       req.body.force,
+      req.body.returnItems,
     );
     sendSuccess(res, updated);
   } catch (err) { next(err); }

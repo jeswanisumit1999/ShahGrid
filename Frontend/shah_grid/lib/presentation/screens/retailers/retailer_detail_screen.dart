@@ -201,6 +201,14 @@ class RetailerDetailScreen extends ConsumerWidget {
               icon: const Icon(Icons.menu_book_outlined),
               label: const Text('Payment Ledger'),
             ),
+            if (canManage) ...[
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () => _addManualPending(context, ref),
+                icon: const Icon(Icons.tune_outlined),
+                label: const Text('Adjust Balance'),
+              ),
+            ],
           ],
         ), // ListView
         ), // RefreshIndicator
@@ -267,6 +275,90 @@ class RetailerDetailScreen extends ConsumerWidget {
         retailer: retailer,
         onSaved: () => ref.invalidate(retailerDetailProvider(id)),
         repo: ref.read(retailersRepositoryProvider),
+      ),
+    );
+  }
+
+  void _addManualPending(BuildContext context, WidgetRef ref) {
+    final amountCtrl = TextEditingController();
+    final notesCtrl  = TextEditingController();
+    String type = 'debit'; // 'debit' | 'credit'
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (ctx, setState) => AlertDialog(
+          title: const Text('Adjust Balance'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'debit',  label: Text('Debit'),  icon: Icon(Icons.arrow_upward, size: 16)),
+                  ButtonSegment(value: 'credit', label: Text('Credit'), icon: Icon(Icons.arrow_downward, size: 16)),
+                ],
+                selected: {type},
+                onSelectionChanged: (v) => setState(() => type = v.first),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: amountCtrl,
+                autofocus: true,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: InputDecoration(
+                  labelText: 'Amount (₹)',
+                  border: const OutlineInputBorder(),
+                  helperText: type == 'debit'
+                      ? 'Increases pending amount'
+                      : 'Reduces pending amount',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: notesCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Notes (optional)',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 2,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                final amount = double.tryParse(amountCtrl.text.trim());
+                if (amount == null || amount <= 0) return;
+                Navigator.pop(dialogCtx);
+                try {
+                  await ref.read(retailersRepositoryProvider).addManualPending(
+                    retailerId: id,
+                    amount: amount,
+                    type: type,
+                    notes: notesCtrl.text.trim().isEmpty ? null : notesCtrl.text.trim(),
+                  );
+                  ref.invalidate(retailerDetailProvider(id));
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Balance adjusted')),
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(friendlyError(e)), backgroundColor: Colors.red),
+                    );
+                  }
+                }
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
       ),
     );
   }

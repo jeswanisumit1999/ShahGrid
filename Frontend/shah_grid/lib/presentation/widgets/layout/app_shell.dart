@@ -66,6 +66,12 @@ class AppShell extends ConsumerWidget {
       permissions: ['roles.manage', 'users.read', 'users.manage'],
     ),
     _Dest(
+      icon: Icons.account_balance_wallet_outlined,
+      label: 'Collection',
+      path: '/admin/collection-summary',
+      permissions: ['analytics.read'],
+    ),
+    _Dest(
       icon: Icons.tune_outlined,
       label: 'Settings',
       path: '/settings',

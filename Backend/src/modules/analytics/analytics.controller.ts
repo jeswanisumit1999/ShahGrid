@@ -20,6 +20,12 @@ export async function getStockAlerts(req: Request, res: Response, next: NextFunc
   } catch (err) { next(err); }
 }
 
+export async function getCollectionSummary(req: Request, res: Response, next: NextFunction) {
+  try {
+    sendSuccess(res, await analyticsService.getCollectionSummary());
+  } catch (err) { next(err); }
+}
+
 export async function getGodownStats(req: Request, res: Response, next: NextFunction) {
   try {
     sendSuccess(res, await analyticsService.getGodownStats());

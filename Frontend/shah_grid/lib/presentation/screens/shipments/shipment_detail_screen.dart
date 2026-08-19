@@ -81,7 +81,7 @@ class _ShipmentBodyState extends ConsumerState<_ShipmentBody> {
   }
 
   Future<void> _updateStatus(String newStatus,
-      {List<ItemAdjustment>? adjustments, bool force = false}) async {
+      {List<ItemAdjustment>? adjustments, bool force = false, List<Map<String, dynamic>>? returnItems}) async {
     setState(() { _updating = true; _error = null; });
     try {
       await ref.read(shipmentsRepositoryProvider).updateStatus(
@@ -90,6 +90,7 @@ class _ShipmentBodyState extends ConsumerState<_ShipmentBody> {
             notes: _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
             adjustments: adjustments,
             force: force,
+            returnItems: returnItems,
           );
       ref.invalidate(shipmentDetailProvider(widget.shipment.id));
       ref.invalidate(shipmentsProvider);
@@ -144,9 +145,29 @@ class _ShipmentBodyState extends ConsumerState<_ShipmentBody> {
       String newStatus, List<String> permissions) async {
     if (newStatus == 'Delivered' && _canDeliverWithAdjustments(permissions)) {
       await _showDeliverySheet(newStatus);
+    } else if (newStatus == 'Returned') {
+      await _showReturnDialog();
     } else {
       await _confirmTransition(newStatus);
     }
+  }
+
+  Future<void> _showReturnDialog() async {
+    final deliveredItems = widget.shipment.shipmentItems
+        .where((i) => i.status == 'delivered' && i.quantity > 0)
+        .toList();
+    if (deliveredItems.isEmpty) {
+      await _confirmTransition('Returned');
+      return;
+    }
+
+    final result = await showDialog<List<Map<String, dynamic>>>(
+      context: context,
+      builder: (_) => _ReturnItemsDialog(items: deliveredItems),
+    );
+    // null = cancelled; empty list = user confirmed with nothing selected (guard in dialog)
+    if (result == null || !mounted) return;
+    await _updateStatus('Returned', returnItems: result);
   }
 
   Future<void> _confirmTransition(String newStatus) async {
@@ -551,6 +572,142 @@ class _DeliveryAdjustmentDialogState extends State<_DeliveryAdjustmentDialog> {
             Navigator.pop(context, adj);
           },
           child: const Text('Deliver'),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Return items dialog ───────────────────────────────────────────────────────
+
+class _ReturnItemsDialog extends StatefulWidget {
+  const _ReturnItemsDialog({required this.items});
+  final List<ShipmentItemModel> items; // only delivered items
+
+  @override
+  State<_ReturnItemsDialog> createState() => _ReturnItemsDialogState();
+}
+
+class _ReturnItemsDialogState extends State<_ReturnItemsDialog> {
+  // item id → quantity to return (0 means not selected)
+  late final Map<String, int> _qty;
+  late final Map<String, TextEditingController> _ctrls;
+
+  @override
+  void initState() {
+    super.initState();
+    // Default: all items selected at full quantity
+    _qty   = { for (final i in widget.items) i.id: i.quantity };
+    _ctrls = { for (final i in widget.items) i.id: TextEditingController(text: '${i.quantity}') };
+  }
+
+  @override
+  void dispose() {
+    for (final c in _ctrls.values) { c.dispose(); }
+    super.dispose();
+  }
+
+  bool get _anySelected => _qty.values.any((q) => q > 0);
+
+  List<Map<String, dynamic>> _buildResult() => _qty.entries
+      .where((e) => e.value > 0)
+      .map((e) => {'shipmentItemId': e.key, 'quantity': e.value})
+      .toList();
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Select Items to Return'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Choose which delivered items to return to inventory.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 360),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: widget.items.length,
+                itemBuilder: (_, i) {
+                  final item  = widget.items[i];
+                  final isOn  = (_qty[item.id] ?? 0) > 0;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Row(children: [
+                      Checkbox(
+                        value: isOn,
+                        onChanged: (v) => setState(() {
+                          if (v == true) {
+                            _qty[item.id] = item.quantity;
+                            _ctrls[item.id]!.text = '${item.quantity}';
+                          } else {
+                            _qty[item.id] = 0;
+                            _ctrls[item.id]!.text = '0';
+                          }
+                        }),
+                      ),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item.productName ?? item.orderItemId,
+                              style: const TextStyle(fontWeight: FontWeight.w500),
+                            ),
+                            Text(
+                              'Delivered: ${item.quantity}',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 80,
+                        child: TextField(
+                          controller: _ctrls[item.id],
+                          enabled: isOn,
+                          keyboardType: TextInputType.number,
+                          textAlign: TextAlign.center,
+                          decoration: InputDecoration(
+                            labelText: 'Qty',
+                            isDense: true,
+                            border: const OutlineInputBorder(),
+                            suffixText: '/${item.quantity}',
+                          ),
+                          onChanged: (v) {
+                            final n = int.tryParse(v) ?? 0;
+                            setState(() => _qty[item.id] = n.clamp(0, item.quantity));
+                          },
+                        ),
+                      ),
+                    ]),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+          onPressed: _anySelected
+              ? () => Navigator.pop(context, _buildResult())
+              : null,
+          child: const Text('Return Selected'),
         ),
       ],
     );
