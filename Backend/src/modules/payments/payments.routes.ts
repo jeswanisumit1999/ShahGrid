@@ -1,10 +1,12 @@
 import { Router } from 'express';
+import multer from 'multer';
 import * as controller from './payments.controller';
 import { authenticate } from '../../middleware/auth.middleware';
 import { requirePermission } from '../../middleware/rbac.middleware';
 import { validate } from '../../middleware/validate.middleware';
 import { recordPaymentSchema, listPaymentsQuerySchema } from './payments.validators';
 
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 const router = Router();
 
 router.use(authenticate);
@@ -77,6 +79,7 @@ router.get('/', requirePermission('payments', 'read'), validate(listPaymentsQuer
  *       403:
  *         $ref: '#/components/responses/Forbidden'
  */
+router.post('/import', requirePermission('payments', 'record'), upload.single('file'), controller.importPayments);
 router.post('/', requirePermission('payments', 'record'), validate(recordPaymentSchema), controller.recordPayment);
 
 export default router;

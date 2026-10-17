@@ -16,3 +16,11 @@ export async function listPayments(req: Request, res: Response, next: NextFuncti
     sendSuccess(res, result.items, 200, { nextCursor: result.nextCursor, hasMore: result.hasMore });
   } catch (err) { next(err); }
 }
+
+export async function importPayments(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.file) throw { status: 400, message: 'No file uploaded', code: 'NO_FILE' };
+    const result = await paymentsService.importPayments(req.file.buffer, req.user!.id);
+    sendSuccess(res, result, 200);
+  } catch (err) { next(err); }
+}

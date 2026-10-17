@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+// ignore: avoid_web_libraries_in_flutter
+import 'dart:html' as html;
 import '../../../data/models/payment_model.dart';
 import '../../../data/models/retailer_model.dart';
 import '../../../data/models/user_model.dart';
@@ -89,6 +92,105 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
     );
   }
 
+  Future<({Uint8List bytes, String name})?> _pickFile() {
+    final completer = Completer<({Uint8List bytes, String name})?>();
+    final input = html.FileUploadInputElement()..accept = '.xls,.xlsx';
+    input.onChange.listen((_) {
+      final file = input.files?.first;
+      if (file == null) { completer.complete(null); return; }
+      final reader = html.FileReader();
+      reader.onLoad.listen((_) {
+        final bytes = reader.result as Uint8List;
+        completer.complete((bytes: bytes, name: file.name));
+      });
+      reader.onError.listen((_) => completer.complete(null));
+      reader.readAsArrayBuffer(file);
+    });
+    input.click();
+    return completer.future;
+  }
+
+  Future<void> _importPayments() async {
+    final picked = await _pickFile();
+    if (picked == null || !mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(children: [
+          CircularProgressIndicator(),
+          SizedBox(width: 16),
+          Text('Importing payments…'),
+        ]),
+      ),
+    );
+
+    try {
+      final repo = ref.read(paymentsRepositoryProvider);
+      final res = await repo.importPayments(picked.bytes, picked.name);
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+      if (!mounted) return;
+
+      ref.read(_paymentsProvider.notifier).load(refresh: true);
+
+      final imported = res['imported'] as int? ?? 0;
+      final skipped = res['skipped'] as int? ?? 0;
+      final errors = (res['errors'] as List?)?.cast<String>() ?? [];
+      final details = (res['details'] as List?)?.cast<String>() ?? [];
+      final companyName = res['companyName'] as String? ?? '';
+
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Import Complete'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (companyName.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text('Company: $companyName',
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                  ),
+                _ImportResultRow(Icons.check_circle, Colors.green, '$imported payments imported'),
+                _ImportResultRow(Icons.skip_next, Colors.orange, '$skipped skipped / already exists'),
+                if (details.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text('Details:', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
+                  ...details.map((d) => Text('• $d', style: const TextStyle(fontSize: 11))),
+                ],
+                if (errors.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text('${errors.length} error(s):', style: const TextStyle(fontWeight: FontWeight.w600)),
+                  ...errors.take(5).map((e) => Text('• $e', style: const TextStyle(fontSize: 12))),
+                  if (errors.length > 5)
+                    Text('… and ${errors.length - 5} more', style: const TextStyle(fontSize: 12)),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Import Failed'),
+          content: Text(friendlyError(e)),
+          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(_paymentsProvider);
@@ -97,7 +199,17 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
     final canRecord = user?.hasPermission('payments', 'record') ?? false;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Payments')),
+      appBar: AppBar(
+        title: const Text('Payments'),
+        actions: [
+          if (canRecord)
+            IconButton(
+              icon: const Icon(Icons.upload_file_outlined),
+              tooltip: 'Import from Tally Excel',
+              onPressed: _importPayments,
+            ),
+        ],
+      ),
       floatingActionButton: canRecord
           ? FloatingActionButton.extended(
               onPressed: _showRecordDialog,
@@ -213,6 +325,23 @@ class _PaymentsScreenState extends ConsumerState<PaymentsScreen> {
       ),
     );
   }
+}
+
+class _ImportResultRow extends StatelessWidget {
+  const _ImportResultRow(this.icon, this.color, this.label);
+  final IconData icon;
+  final Color color;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 2),
+    child: Row(children: [
+      Icon(icon, size: 16, color: color),
+      const SizedBox(width: 6),
+      Text(label),
+    ]),
+  );
 }
 
 class _RecordPaymentSheet extends ConsumerStatefulWidget {

@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/api_constants.dart';
@@ -36,6 +37,14 @@ class PaymentsRepository {
       hasMore: pagination['hasMore'] as bool? ?? false,
       nextCursor: pagination['nextCursor'] as String?,
     );
+  }
+
+  Future<Map<String, dynamic>> importPayments(Uint8List bytes, String filename) async {
+    final formData = FormData.fromMap({
+      'file': MultipartFile.fromBytes(bytes, filename: filename),
+    });
+    final response = await _dio.post(ApiConstants.paymentsImport, data: formData);
+    return (response.data as Map<String, dynamic>)['data'] as Map<String, dynamic>;
   }
 
   Future<PaymentModel> record({

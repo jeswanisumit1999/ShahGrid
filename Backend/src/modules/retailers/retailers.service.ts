@@ -448,9 +448,13 @@ export async function importRetailers(buffer: Buffer): Promise<ImportResult> {
 
   // ── Pre-load / create companies ───────────────────────────────────────────
   const companyNames = [
-    ...new Set(rows.flatMap(r => r.companyAmounts.map(c => c.companyName)).filter(Boolean)),
+    ...new Set(
+      rows.flatMap(r => r.companyAmounts.map(c => c.companyName))
+          .filter(Boolean)
+          .map(n => n.trim().toUpperCase())   // normalize to uppercase
+    ),
   ];
-  const companyIdMap: Record<string, string> = {}; // lowerName → id
+  const companyIdMap: Record<string, string> = {}; // upperName → id
   for (const name of companyNames) {
     let company = await prisma.company.findFirst({
       where: { name: { equals: name, mode: 'insensitive' } },
@@ -459,7 +463,7 @@ export async function importRetailers(buffer: Buffer): Promise<ImportResult> {
     if (!company) {
       company = await prisma.company.create({ data: { name }, select: { id: true } });
     }
-    companyIdMap[name.toLowerCase()] = company.id;
+    companyIdMap[name] = company.id;
   }
 
   // ── Pre-load sales officers ───────────────────────────────────────────────
@@ -517,7 +521,7 @@ export async function importRetailers(buffer: Buffer): Promise<ImportResult> {
 
         // Per-company balance + ledger entries
         for (const ca of row.companyAmounts) {
-          const companyId = ca.companyName ? companyIdMap[ca.companyName.toLowerCase()] : undefined;
+          const companyId = ca.companyName ? companyIdMap[ca.companyName.trim().toUpperCase()] : undefined;
           const net = ca.debit - ca.credit;
           const companyNet = new Prisma.Decimal(net.toFixed(2));
 

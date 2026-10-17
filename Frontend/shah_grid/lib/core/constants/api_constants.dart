@@ -58,6 +58,7 @@ class ApiConstants {
 
   // Payments
   static const String payments = '/payments';
+  static const String paymentsImport = '/payments/import';
 
   // Returns
   static const String returns = '/returns';

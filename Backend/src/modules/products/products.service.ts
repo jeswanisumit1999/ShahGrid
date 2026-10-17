@@ -10,11 +10,12 @@ export async function listCompanies() {
 }
 
 export async function createCompany(name: string, gstin?: string, phone?: string, address?: string) {
-  const existing = await prisma.company.findUnique({ where: { name } });
-  if (existing) throw AppError.conflict(`Company "${name}" already exists`);
+  const normalizedName = name.trim().toUpperCase();
+  const existing = await prisma.company.findFirst({ where: { name: { equals: normalizedName, mode: 'insensitive' } } });
+  if (existing) throw AppError.conflict(`Company "${normalizedName}" already exists`);
   return prisma.company.create({
     data: {
-      name,
+      name: normalizedName,
       ...(gstin ? { gstin } : {}),
       ...(phone ? { phone } : {}),
       ...(address ? { address } : {}),
