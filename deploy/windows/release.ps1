@@ -70,12 +70,19 @@ if (-not $SkipFrontend) {
 
 # -- Backend ------------------------------------------------------------------
 if (-not $SkipBackend) {
-    Step "Backend package (src + tsconfig shipped; server compiles)"
+    Step "Backend build (tsc)"
+    Push-Location $BackendDir
+    try {
+        & npm ci
+        if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
+        & npm run build
+        if ($LASTEXITCODE -ne 0) { throw "tsc build failed" }
+    } finally { Pop-Location }
+
     $stage = Join-Path $OutDir 'backend-stage'
     New-Item -ItemType Directory -Path $stage | Out-Null
-    Copy-Item (Join-Path $BackendDir 'src')               $stage -Recurse
+    Copy-Item (Join-Path $BackendDir 'dist')              $stage -Recurse
     Copy-Item (Join-Path $BackendDir 'prisma')            $stage -Recurse
-    Copy-Item (Join-Path $BackendDir 'tsconfig.json')     $stage
     Copy-Item (Join-Path $BackendDir 'package.json')      $stage
     Copy-Item (Join-Path $BackendDir 'package-lock.json') $stage
 

@@ -57,13 +57,17 @@ fi
 # -- Backend -------------------------------------------------------------------
 if [[ "$SKIP_BACKEND" == false ]]; then
   echo ""
-  echo "==> Backend package (src + tsconfig shipped; server compiles)"
+  echo "==> Backend build (npm ci + tsc)"
+  pushd "$BACKEND_DIR" > /dev/null
+  npm ci
+  npm run build
+  popd > /dev/null
+
   STAGE="$OUT_DIR/backend-stage"
   mkdir -p "$STAGE"
-  cp -r "$BACKEND_DIR/src"             "$STAGE/"
-  cp -r "$BACKEND_DIR/prisma"          "$STAGE/"
-  cp    "$BACKEND_DIR/tsconfig.json"   "$STAGE/"
-  cp    "$BACKEND_DIR/package.json"    "$STAGE/"
+  cp -r "$BACKEND_DIR/dist"             "$STAGE/"
+  cp -r "$BACKEND_DIR/prisma"           "$STAGE/"
+  cp    "$BACKEND_DIR/package.json"     "$STAGE/"
   cp    "$BACKEND_DIR/package-lock.json" "$STAGE/"
 
   BE_ZIP="$OUT_DIR/backend-$TAG.zip"

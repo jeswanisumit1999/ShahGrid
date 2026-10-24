@@ -248,12 +248,13 @@ function Test-Health([int]$retries = 10, [int]$delaySec = 3) {
 function Initialize-Backend([string]$backendDir, [switch]$Seed) {
     Push-Location $backendDir
     try {
-        Write-Info "npm ci (installs prisma CLI + runtime deps) ..."
+        # Force devDependencies (prisma CLI, typescript) even if NODE_ENV=production
+        $savedNodeEnv = $env:NODE_ENV
+        $env:NODE_ENV = 'development'
+        Write-Info "npm ci (installs all deps including prisma CLI) ..."
         & npm ci
+        $env:NODE_ENV = $savedNodeEnv
         if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
-        Write-Info "npm run build (compiles TypeScript -> dist/) ..."
-        & npm run build
-        if ($LASTEXITCODE -ne 0) { throw "npm run build failed" }
         Write-Info "prisma generate ..."
         & npx prisma generate
         if ($LASTEXITCODE -ne 0) { throw "prisma generate failed" }
