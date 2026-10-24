@@ -251,6 +251,9 @@ function Initialize-Backend([string]$backendDir, [switch]$Seed) {
         Write-Info "npm ci (installs prisma CLI + runtime deps) ..."
         & npm ci
         if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
+        Write-Info "npm run build (compiles TypeScript -> dist/) ..."
+        & npm run build
+        if ($LASTEXITCODE -ne 0) { throw "npm run build failed" }
         Write-Info "prisma generate ..."
         & npx prisma generate
         if ($LASTEXITCODE -ne 0) { throw "prisma generate failed" }
