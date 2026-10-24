@@ -92,7 +92,11 @@ if ($doBackend) {
     Initialize-Backend $beDir
 } else {
     Write-Step "Reusing current backend"
-    Copy-Item (Join-Path $SG.Current 'backend') $beDir -Recurse -Force
+    # Copy-Item silently truncates deeply-nested node_modules on Windows (MAX_PATH=260).
+    # robocopy /256 bypasses that limit; exit codes 0-7 are success/informational.
+    $src = Join-Path $SG.Current 'backend'
+    robocopy $src $beDir /E /256 /NFL /NDL /NJH /NJS /NC /NS /NP /MT:8 | Out-Null
+    if ($LASTEXITCODE -ge 8) { throw "robocopy failed (exit code $LASTEXITCODE) copying backend from $src" }
     Write-Ok "copied backend from active release"
 }
 
