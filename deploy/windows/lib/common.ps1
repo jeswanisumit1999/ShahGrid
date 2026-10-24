@@ -165,10 +165,70 @@ function Install-NssmService {
 }
 
 function Restart-Svc([string]$name) {
-    if (Test-ServiceExists $name) {
-        Restart-Service -Name $name -Force
-        Write-Ok "restarted $name"
-    } else { Write-Warn "service $name not installed yet" }
+    if (-not (Test-ServiceExists $name)) {
+        Write-Warn "service $name not installed yet"
+        return
+    }
+
+    $nssm = $SG.NssmExe
+
+    # Stop via NSSM (handles the full process tree, unlike Stop-Service)
+    Write-Info "stopping $name ..."
+    & $nssm stop $name confirm 2>$null | Out-Null
+
+    # Wait up to 30 s for the service to reach Stopped
+    $deadline = (Get-Date).AddSeconds(30)
+    while ($true) {
+        $svc = Get-Service -Name $name -ErrorAction SilentlyContinue
+        if (-not $svc -or $svc.Status -eq 'Stopped') { break }
+        if ((Get-Date) -gt $deadline) {
+            Write-Warn "$name did not stop in 30 s — force-killing process"
+            try {
+                $wmi = Get-WmiObject Win32_Service -Filter "Name='$name'" -ErrorAction SilentlyContinue
+                if ($wmi -and $wmi.ProcessId -ne 0) {
+                    Stop-Process -Id $wmi.ProcessId -Force -ErrorAction SilentlyContinue
+                }
+            } catch { }
+            break
+        }
+        Start-Sleep -Milliseconds 500
+    }
+
+    # Kill any zombie process still holding the port (node on 3000, pgbouncer on 6432)
+    if ($name -eq $SG.Svc.Backend) {
+        $hit = netstat -ano 2>$null | Select-String ":$($SG.BackendPort)\s"
+        if ($hit) {
+            $pid = ($hit -split '\s+')[-1]
+            if ($pid -match '^\d+$') { Stop-Process -Id ([int]$pid) -Force -ErrorAction SilentlyContinue }
+        }
+    }
+    if ($name -eq $SG.Svc.PgBouncer) {
+        Stop-Process -Name "pgbouncer" -Force -ErrorAction SilentlyContinue
+        $hit = netstat -ano 2>$null | Select-String ":$($SG.PgBouncerPort)\s"
+        if ($hit) {
+            $pid = ($hit -split '\s+')[-1]
+            if ($pid -match '^\d+$') { Stop-Process -Id ([int]$pid) -Force -ErrorAction SilentlyContinue }
+        }
+    }
+
+    Start-Sleep -Milliseconds 800   # brief settle before start
+
+    # Start via NSSM
+    Write-Info "starting $name ..."
+    & $nssm start $name | Out-Null
+
+    # Wait up to 30 s for Running
+    $deadline = (Get-Date).AddSeconds(30)
+    while ($true) {
+        $svc = Get-Service -Name $name -ErrorAction SilentlyContinue
+        if ($svc -and $svc.Status -eq 'Running') { break }
+        if ((Get-Date) -gt $deadline) {
+            throw "Service '$name' did not reach Running state within 30 s. Check logs in $($SG.Logs)."
+        }
+        Start-Sleep -Milliseconds 500
+    }
+
+    Write-Ok "restarted $name"
 }
 
 # -- Health probe -------------------------------------------------------------
