@@ -138,7 +138,7 @@ function Install-NssmService {
     $nssm = $SG.NssmExe
     if (-not (Test-Path $nssm)) { throw "nssm.exe missing at $nssm" }
     if (Test-ServiceExists $Name) {
-        & $nssm stop $Name confirm 2>$null | Out-Null
+        $null = & $nssm stop $Name confirm 2>&1
         
         # If it's pgbouncer, forcefully kill any zombie instances tying up port 6432
         if ($Name -eq $SG.Svc.PgBouncer) {
@@ -174,7 +174,7 @@ function Restart-Svc([string]$name) {
 
     # Stop via NSSM (handles the full process tree, unlike Stop-Service)
     Write-Info "stopping $name ..."
-    & $nssm stop $name confirm 2>$null | Out-Null
+    $null = & $nssm stop $name confirm 2>&1   # merge+discard; ignore "not started" errors
 
     # Wait up to 30 s for the service to reach Stopped
     $deadline = (Get-Date).AddSeconds(30)
