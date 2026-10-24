@@ -7,9 +7,9 @@
   Runs where the build tools live (Flutter SDK, Node/npm, GitHub CLI `gh`):
     - Frontend: flutter build web --release (API URL baked in at build time)
                 -> frontend-<tag>.zip  (contains web\...)
-    - Backend:  npm ci + npm run build (tsc)
-                -> backend-<tag>.zip   (dist\ + prisma\ + package.json + lock)
-                  NOTE: node_modules is NOT shipped; the server runs npm ci.
+    - Backend:  packages source for server-side compile
+                -> backend-<tag>.zip   (src\ + prisma\ + tsconfig.json + package.json + lock)
+                  NOTE: node_modules and dist are NOT shipped; the server runs npm ci + tsc.
     - gh release create <tag> with both zips attached.
 
   Requires: flutter, node/npm, gh (logged in with push access to the repo).
@@ -70,19 +70,12 @@ if (-not $SkipFrontend) {
 
 # -- Backend ------------------------------------------------------------------
 if (-not $SkipBackend) {
-    Step "Backend build (tsc)"
-    Push-Location $BackendDir
-    try {
-        & npm ci
-        if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
-        & npm run build
-        if ($LASTEXITCODE -ne 0) { throw "tsc build failed" }
-    } finally { Pop-Location }
-
+    Step "Backend package (src + tsconfig shipped; server compiles)"
     $stage = Join-Path $OutDir 'backend-stage'
     New-Item -ItemType Directory -Path $stage | Out-Null
-    Copy-Item (Join-Path $BackendDir 'dist')              $stage -Recurse
+    Copy-Item (Join-Path $BackendDir 'src')               $stage -Recurse
     Copy-Item (Join-Path $BackendDir 'prisma')            $stage -Recurse
+    Copy-Item (Join-Path $BackendDir 'tsconfig.json')     $stage
     Copy-Item (Join-Path $BackendDir 'package.json')      $stage
     Copy-Item (Join-Path $BackendDir 'package-lock.json') $stage
 
